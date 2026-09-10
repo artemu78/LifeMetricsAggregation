@@ -1,0 +1,7 @@
+Metadata-Version: 2.4
+Name: live-life
+Version: 0.1.0
+Summary: Local-first personal telemetry aggregation
+Requires-Python: >=3.11
+Requires-Dist: google-api-python-client>=2.0
+Requires-Dist: google-auth-oauthlib>=1.0
