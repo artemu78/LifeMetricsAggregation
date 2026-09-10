@@ -7,7 +7,6 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from collections.abc import Callable
 from typing import Any
-import json
 import re
 import sys
 from zoneinfo import ZoneInfo
@@ -102,6 +101,71 @@ def inclusive_days(start: date, end: date):
     while current <= end:
         yield current
         current += timedelta(days=1)
+
+
+def _local_timestamp(value: str | None, timezone_name: str) -> str | None:
+    if not value:
+        return None
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=ZoneInfo(timezone_name))
+    return parsed.astimezone(ZoneInfo(timezone_name)).isoformat(timespec="seconds")
+
+
+def data_freshness(config: Config, now: datetime | None = None) -> dict[str, object]:
+    """Return the latest stored record time for every supported data source."""
+    timezone = ZoneInfo(config.timezone)
+    current = now or datetime.now(timezone)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=timezone)
+    current = current.astimezone(timezone)
+
+    with connect(config.database) as conn:
+        metric_latest = {
+            row["source"]: _local_timestamp(row["latest"], config.timezone)
+            for row in conn.execute(
+                "SELECT source, MAX(occurred_at) AS latest FROM metric_events GROUP BY source"
+            )
+        }
+        todoist_latest = conn.execute(
+            """
+            SELECT MAX(recorded_at) AS latest
+            FROM (
+                SELECT completed_at AS recorded_at FROM completed_tasks WHERE source = 'todoist'
+                UNION ALL
+                SELECT created_at AS recorded_at FROM created_tasks WHERE source = 'todoist'
+            )
+            """
+        ).fetchone()["latest"]
+        diary_latest = conn.execute(
+            "SELECT MAX(logical_date) AS latest FROM journal_entries"
+        ).fetchone()["latest"]
+
+    local_health = max(
+        filter(None, (metric_latest.get("health_sync"), metric_latest.get("health_drop"))),
+        default=None,
+    )
+    return {
+        "reported_at": current.isoformat(timespec="seconds"),
+        "sources": {
+            "Fitness bracelet (Google Drive)": metric_latest.get("fitness_drive"),
+            "Welltory": metric_latest.get("welltory"),
+            "RescueTime": metric_latest.get("rescuetime"),
+            "Todoist": _local_timestamp(todoist_latest, config.timezone),
+            "Diary": diary_latest,
+            "Local health inbox": local_health,
+        },
+    }
+
+
+def format_data_freshness(summary: dict[str, object]) -> str:
+    """Render a compact, value-free freshness report for terminal output."""
+    lines = [f"Data freshness — {summary['reported_at']}"]
+    sources = summary["sources"]
+    assert isinstance(sources, dict)
+    for source, latest in sources.items():
+        lines.append(f"- {source}: {latest or 'no records'}")
+    return "\n".join(lines)
 
 
 def form_reports(
@@ -215,6 +279,7 @@ def form_reports(
 
     for item in days:
         item["report"] = str(generate_report(config, date.fromisoformat(item["date"])))
+    result["data_freshness"] = data_freshness(config)
     if issues:
         result["approved_unavailable_sources"] = issues
     return result
@@ -229,7 +294,7 @@ def main() -> int:
     except SourceApprovalRequired as exc:
         print(f"\n{exc}", file=sys.stderr)
         return 2
-    print(json.dumps(result, indent=2))
+    print(format_data_freshness(result["data_freshness"]))
     return 0
 
 
