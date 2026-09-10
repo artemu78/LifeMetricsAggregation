@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from contextlib import redirect_stderr, redirect_stdout
@@ -22,6 +22,8 @@ from live_life.importers import import_fitness_drive, import_inbox, import_wellt
 from live_life.report import generate_report
 from form_reports import (
     SourceApprovalRequired,
+    data_freshness,
+    format_data_freshness,
     form_reports,
     inclusive_days,
     latest_report_day,
@@ -238,12 +240,61 @@ class PipelineTest(unittest.TestCase):
     def test_form_reports_main_prints_result_and_returns_success(
         self, form_reports_mock, load_config_mock
     ):
+        form_reports_mock.return_value = {
+            "days": [],
+            "data_freshness": {
+                "reported_at": "2026-09-10T12:00:00+03:00",
+                "sources": {"Welltory": "2026-09-10T10:00:00+03:00"},
+            },
+        }
         stdout = StringIO()
         with redirect_stdout(stdout):
             exit_status = form_reports_main()
 
         self.assertEqual(exit_status, 0)
-        self.assertEqual(json.loads(stdout.getvalue()), {"days": []})
+        self.assertEqual(
+            stdout.getvalue(),
+            "Data freshness — 2026-09-10T12:00:00+03:00\n"
+            "- Welltory: 2026-09-10T10:00:00+03:00\n",
+        )
+
+    def test_data_freshness_reports_latest_record_for_each_source(self):
+        with connect(self.config.database) as conn:
+            insert_metric(
+                conn,
+                source="welltory",
+                external_id="measurement-1",
+                occurred_at="2026-09-10T07:30:00+00:00",
+                metric="welltory.SDNN",
+                value_num=42,
+                value_text=None,
+                unit="ms",
+                payload={},
+            )
+            conn.execute(
+                """
+                INSERT INTO completed_tasks
+                (source, external_id, content, project_id, completed_at, payload_json, imported_at)
+                VALUES ('todoist', 'task-1', '', NULL, '2026-09-10T08:00:00+00:00', '{}', '')
+                """
+            )
+            conn.execute(
+                """
+                INSERT INTO journal_entries(logical_date, content, source_path, imported_at)
+                VALUES ('2026-09-09', '', '', '')
+                """
+            )
+
+        summary = data_freshness(
+            self.config,
+            datetime.fromisoformat("2026-09-10T12:00:00+03:00"),
+        )
+
+        self.assertEqual(summary["sources"]["Welltory"], "2026-09-10T10:30:00+03:00")
+        self.assertEqual(summary["sources"]["Todoist"], "2026-09-10T11:00:00+03:00")
+        self.assertEqual(summary["sources"]["Diary"], "2026-09-09")
+        self.assertIsNone(summary["sources"]["RescueTime"])
+        self.assertIn("- RescueTime: no records", format_data_freshness(summary))
 
     @patch("form_reports.load_config", return_value="config")
     @patch(
