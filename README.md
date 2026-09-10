@@ -22,7 +22,7 @@ under `reports/YYYY-MM-DD.md`.
 
 ## API setup
 
-Copy `.env.example` to `.env` and fill in the two tokens. Keep `.env` private.
+Copy `.env.example` to `.env` and configure your sources using the documented variables. Keep `.env` private.
 
 - RescueTime: create a personal API key in RescueTime's API Key Management page.
 - Todoist: Settings -> Integrations -> Developer -> API token.
@@ -42,7 +42,7 @@ drop-folder data, and creates the daily report.
 
 The source of truth is the configured Google Drive folder:
 
-`https://drive.google.com/drive/folders/1HkjtMrBa8hv_LPbtYbyIUXfxgUVfsfNO`
+`GOOGLE_DRIVE_FOLDER_ID` in `.env`
 
 Exports are discovered under `year/month/day` folders. The importer also accepts
 the current `year/month/files` layout. It downloads only new or changed Reva
@@ -70,10 +70,10 @@ Routine `run-daily`, `backfill`, and `form_reports.py` runs sync Drive automatic
 
 Run `python3 -m live_life init-db` once to create these folders:
 
-- `data/inbox/diary/YYYY-MM-DD.md` for diary text. The scheduled Codex task
-  reads the dated section for that day from the Google Doc **personal diary**
-  and writes this local snapshot automatically. The daily report records only
-  that an entry was imported; it never repeats the diary text.
+- `data/inbox/diary/YYYY-MM-DD.md` for manual diary imports when
+  `DIARY_GOOGLE_DOC_ID` is empty. With a Google Doc configured, local diary
+  snapshots are ignored so stale copies cannot overwrite direct imports.
+  Reports record only whether an entry exists, never its text.
 - `data/inbox/health/*.csv` is retained for legacy Health Sync exports. Files for
   **Steps**, **Heart rate**, and **Sleep** can be copied here unchanged; their
   native `Date,Time,...` CSV layout is detected automatically.
@@ -111,7 +111,8 @@ the activity and productivity perspectives in separate columns. The two
 perspectives are duplicate classifications of the same time and must not be
 summed together.
 
-After a long gap, refresh the diary snapshots and then run `backfill`. It syncs
+After a long gap, run `form_reports.py` to refresh the Google diary, then use
+`backfill` if older reports also need rebuilding. It syncs
 the relevant Google Drive fitness months, imports Welltory and inbox files once,
 downloads RescueTime and Todoist for every logical day in the inclusive range,
 and regenerates all matching reports. Re-running the same range is safe.
@@ -134,3 +135,78 @@ partial data. Only an explicit `y` or `yes` continues. A non-interactive run
 stops with exit status 2 instead of waiting for input.
 
 This is a self-observation tool, not a medical diagnosis system.
+
+## Diary directly from Google Docs
+
+`form_reports.py` now fetches the configured document on every run through the
+Google Drive API, splits its dated sections, and imports them into the local
+`journal_entries` table before generating reports. No browser or manual export
+is needed. The document ID is set with `DIARY_GOOGLE_DOC_ID` in `.env`.
+
+For this Mac, the OAuth client and renewable token already exist, and live
+read access has been verified. Run:
+
+```bash
+cd /Users/artemreva/MyLocalDocuments/live_life
+source .venv/bin/activate
+python3 form_reports.py
+```
+
+The virtual environment is required because the default system Python does
+not currently have the Google libraries. On a fresh installation, install them
+with `python3 -m pip install -e .` inside the activated environment.
+
+The diary reuses `private/google-drive-client-secret.json` and
+`data/google-drive-token.json`, configured through `GOOGLE_DRIVE_CLIENT_SECRET_FILE` and
+`GOOGLE_DRIVE_TOKEN_FILE` in `.env`. No additional
+API, credential file, document sharing, or OAuth scope is needed. If access is
+revoked, run `python3 -m live_life authorize-fitness-drive` in the activated
+environment and sign in with an account that can read the diary. This existing
+command authorizes both fitness exports and diary reads.
+
+Keep date headings on separate lines, in `D.M.YYYY` or `YYYY-MM-DD` format
+(optional Markdown heading markers are accepted). Text before the first date
+is ignored; repeated dates are combined. Dates are explicit diary dates and
+are not shifted by the 05:00 telemetry boundary. Blank sections are not entries.
+The Drive plain-text export reads the document's first tab; keep the diary in
+that tab. Selecting arbitrary tabs is not supported. Google limits this export
+to 10 MB: https://developers.google.com/workspace/drive/api/guides/manage-downloads
+
+All dated sections are refreshed in the database. Edits replace previous text;
+entries removed from this document are removed from its previous import.
+Other-source rows on other dates are preserved. Existing local entries on matching
+dates are replaced by Google Doc entries. Report regeneration still covers the
+latest existing report through today; use `backfill` for older report dates.
+Only `form_reports.py` performs the new direct diary fetch; other CLI commands
+use the last imported diary state.
+
+Network, OAuth, export, and unrecognized-date errors use the existing unavailable
+source approval gate. Failed fetches/parsing preserve the previous diary import;
+reports require explicit approval to continue with unavailable sources.
+Private diary text is stored only in the ignored local database, not terminal
+summaries or daily reports. Tests use synthetic text; live verification used a
+temporary database and did not regenerate normal reports.
+
+Google settings are listed in `.env.example`. Copy the example to `.env` only
+for a fresh installation; edit the existing `.env` on this Mac. Set
+`GOOGLE_DRIVE_CLIENT_SECRET_FILE`, `GOOGLE_DRIVE_TOKEN_FILE`,
+`GOOGLE_DRIVE_FOLDER_ID`, and `DIARY_GOOGLE_DOC_ID` there. Existing shell
+environment variables take precedence over `.env`. Credential paths accept
+project-relative paths, absolute paths, and `~/`. Actual OAuth secrets remain
+in the ignored JSON files. The cache location uses `GOOGLE_DRIVE_CACHE_DIR` in `.env`.
+
+All source setup is in `.env` (see `.env.example`):
+
+| Source | Environment settings |
+| --- | --- |
+| Todoist | `TODOIST_API_TOKEN`, optional `TODOIST_API_BASE_URL` |
+| RescueTime | `RESCUETIME_API_KEY`, optional `RESCUETIME_API_URL` |
+| Google Drive / diary | `GOOGLE_DRIVE_CLIENT_SECRET_FILE`, `GOOGLE_DRIVE_TOKEN_FILE`, `GOOGLE_DRIVE_FOLDER_ID`, `DIARY_GOOGLE_DOC_ID`, `GOOGLE_DRIVE_CACHE_DIR` |
+| Welltory CSV exports | `WELLTORY_DOWNLOADS_DIR`, `WELLTORY_FILE_PATTERN` |
+| Local health / diary imports | `SOURCE_INBOX_DIR` (contains `health/`, `health_connect/`, `diary/`) |
+
+Only timezone, logical day boundary, database, and report destination remain
+in `config.toml`. Source paths support relative, absolute, and `~/` locations.
+Blank optional endpoint/path settings use the defaults shown in `.env.example`.
+Welltory still requires a CSV export; this does not add a Welltory API login.
+Google API discovery and the read-only OAuth scope remain protocol constants.

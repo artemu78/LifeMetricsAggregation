@@ -18,6 +18,9 @@ class Config:
     welltory_pattern: str
     rescuetime_key_env: str
     todoist_token_env: str
+    rescuetime_api_url: str = "https://www.rescuetime.com/anapi/data"
+    todoist_api_base_url: str = "https://api.todoist.com/api/v1"
+    diary_google_doc_id: str = ""
     fitness_drive_folder_id: str = ""
     fitness_drive_client_secret: Path | None = None
     fitness_drive_token: Path | None = None
@@ -42,27 +45,28 @@ def load_config(root: Path | None = None) -> Config:
         raw = tomllib.load(handle)
     load_dotenv(root / ".env")
     general = raw["general"]
-    welltory = raw["welltory"]
-    fitness_drive = raw.get("fitness_drive", {})
 
     def project_path(value: str | None) -> Path | None:
-        return root / value if value else None
+        return root / Path(value).expanduser() if value else None
 
     return Config(
         root=root,
         timezone=general["timezone"],
         day_boundary_hour=int(general["day_boundary_hour"]),
         database=root / general["database"],
-        inbox=root / general["inbox"],
+        inbox=project_path(os.environ.get("SOURCE_INBOX_DIR") or "data/inbox"),
         reports=root / general["reports"],
-        welltory_downloads=Path(welltory["downloads_dir"]).expanduser(),
-        welltory_pattern=welltory["file_pattern"],
-        rescuetime_key_env=raw["rescuetime"]["api_key_env"],
-        todoist_token_env=raw["todoist"]["token_env"],
-        fitness_drive_folder_id=fitness_drive.get("folder_id", ""),
-        fitness_drive_client_secret=project_path(fitness_drive.get("client_secret_file")),
-        fitness_drive_token=project_path(fitness_drive.get("token_file")),
-        fitness_drive_cache=project_path(fitness_drive.get("cache_dir")),
+        welltory_downloads=project_path(os.environ.get("WELLTORY_DOWNLOADS_DIR") or "~/Downloads"),
+        welltory_pattern=os.environ.get("WELLTORY_FILE_PATTERN") or "WELLTORY_HRV_DATA_EXPORT_*.csv",
+        rescuetime_key_env="RESCUETIME_API_KEY",
+        todoist_token_env="TODOIST_API_TOKEN",
+        diary_google_doc_id=os.environ.get("DIARY_GOOGLE_DOC_ID", ""),
+        fitness_drive_folder_id=os.environ.get("GOOGLE_DRIVE_FOLDER_ID", ""),
+        fitness_drive_client_secret=project_path(os.environ.get("GOOGLE_DRIVE_CLIENT_SECRET_FILE")),
+        fitness_drive_token=project_path(os.environ.get("GOOGLE_DRIVE_TOKEN_FILE")),
+        fitness_drive_cache=project_path(os.environ.get("GOOGLE_DRIVE_CACHE_DIR") or "data/inbox/fitness_drive"),
+        rescuetime_api_url=(os.environ.get("RESCUETIME_API_URL") or "https://www.rescuetime.com/anapi/data").rstrip("/"),
+        todoist_api_base_url=(os.environ.get("TODOIST_API_BASE_URL") or "https://api.todoist.com/api/v1").rstrip("/"),
     )
 
 

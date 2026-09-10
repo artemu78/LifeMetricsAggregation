@@ -317,7 +317,8 @@ def import_inbox(config: Config) -> dict[str, int]:
                         payload=row,
                     ):
                         health_rows += 1
-        for path in sorted((config.inbox / "diary").glob("*.md")):
+        diary_paths = [] if config.diary_google_doc_id else sorted((config.inbox / "diary").glob("*.md"))
+        for path in diary_paths:
             match = re.fullmatch(r"(\d{4}-\d{2}-\d{2})", path.stem)
             if not match:
                 continue

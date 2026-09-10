@@ -49,7 +49,7 @@ def collect_rescuetime(config: Config, day: date) -> dict[str, int]:
                     "format": "json",
                 }
             )
-            payload = _get_json(f"https://www.rescuetime.com/anapi/data?{params}", token)
+            payload = _get_json(f"{config.rescuetime_api_url}?{params}", token)
             queries += 1
             headers = payload.get("row_headers", [])
             for values in payload.get("rows", []):
@@ -121,7 +121,7 @@ def collect_todoist(config: Config, day: date) -> dict[str, int]:
             if cursor:
                 params["cursor"] = cursor
             url = (
-                "https://api.todoist.com/api/v1/tasks/completed/by_completion_date?"
+                f"{config.todoist_api_base_url}/tasks/completed/by_completion_date?"
                 + urlencode(params)
             )
             payload = _get_json(url, token)
@@ -178,7 +178,7 @@ def collect_todoist(config: Config, day: date) -> dict[str, int]:
             params = {"limit": 200}
             if cursor:
                 params["cursor"] = cursor
-            payload = _get_json("https://api.todoist.com/api/v1/tasks?" + urlencode(params), token)
+            payload = _get_json(f"{config.todoist_api_base_url}/tasks?" + urlencode(params), token)
             items = payload.get("results", payload) if isinstance(payload, dict) else payload
             for item in items:
                 created_at = item.get("created_at") or item.get("added_at")

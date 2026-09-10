@@ -33,7 +33,7 @@ def _google_modules():
 def authorize_fitness_drive(config: Config) -> Path:
     """Run the one-time installed-app OAuth flow and persist a renewable token."""
     if not config.fitness_drive_client_secret or not config.fitness_drive_token:
-        raise RuntimeError("fitness_drive paths are missing from config.toml")
+        raise RuntimeError("Set GOOGLE_DRIVE_CLIENT_SECRET_FILE and GOOGLE_DRIVE_TOKEN_FILE in .env")
     if not config.fitness_drive_client_secret.exists():
         raise RuntimeError(
             f"Google OAuth client secret not found: {config.fitness_drive_client_secret}"

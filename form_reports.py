@@ -14,6 +14,7 @@ from zoneinfo import ZoneInfo
 from live_life.collectors import collect_rescuetime, collect_todoist
 from live_life.config import Config, ensure_layout, load_config
 from live_life.db import connect
+from live_life.diary_drive import sync_diary_drive
 from live_life.fitness_drive import sync_fitness_drive
 from live_life.importers import import_fitness_drive, import_inbox, import_welltory
 from live_life.report import generate_report
@@ -213,9 +214,12 @@ def form_reports(
     )
     inbox = _source_result("Local inbox import", lambda: import_inbox(config), issues)
 
+    diary = _source_result("Diary / Google Drive", lambda: sync_diary_drive(config), issues)
+
     result: dict[str, object] = {
         "from": start.isoformat(),
         "to": today.isoformat(),
+        "diary": diary,
         "fitness_drive_sync": drive_sync,
         "fitness_drive": drive_import,
         "welltory": welltory,
