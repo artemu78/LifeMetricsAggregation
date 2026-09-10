@@ -74,14 +74,6 @@ Run `python3 -m live_life init-db` once to create these folders:
   `DIARY_GOOGLE_DOC_ID` is empty. With a Google Doc configured, local diary
   snapshots are ignored so stale copies cannot overwrite direct imports.
   Reports record only whether an entry exists, never its text.
-- `data/inbox/health/*.csv` is retained for legacy Health Sync exports. Files for
-  **Steps**, **Heart rate**, and **Sleep** can be copied here unchanged; their
-  native `Date,Time,...` CSV layout is detected automatically.
-- `data/inbox/health/*.csv` for generic health rows with columns
-  `timestamp,metric,value,unit`.
-- `data/inbox/health_connect/` for Health Connect exports. These are archived
-  for now; parsing will be added after inspecting a real export ZIP.
-
 ## Welltory browser step
 
 Welltory has no documented personal API for this export. The scheduled Codex
@@ -203,10 +195,15 @@ All source setup is in `.env` (see `.env.example`):
 | RescueTime | `RESCUETIME_API_KEY`, optional `RESCUETIME_API_URL` |
 | Google Drive / diary | `GOOGLE_DRIVE_CLIENT_SECRET_FILE`, `GOOGLE_DRIVE_TOKEN_FILE`, `GOOGLE_DRIVE_FOLDER_ID`, `DIARY_GOOGLE_DOC_ID`, `GOOGLE_DRIVE_CACHE_DIR` |
 | Welltory CSV exports | `WELLTORY_DOWNLOADS_DIR`, `WELLTORY_FILE_PATTERN` |
-| Local health / diary imports | `SOURCE_INBOX_DIR` (contains `health/`, `health_connect/`, `diary/`) |
+| Optional local diary imports | `SOURCE_INBOX_DIR` (contains `diary/`) |
 
 Only timezone, logical day boundary, database, and report destination remain
 in `config.toml`. Source paths support relative, absolute, and `~/` locations.
 Blank optional endpoint/path settings use the defaults shown in `.env.example`.
 Welltory still requires a CSV export; this does not add a Welltory API login.
 Google API discovery and the read-only OAuth scope remain protocol constants.
+
+Local health CSV and Health Connect ZIP inbox handling has been retired.
+Fitness reports use only Google Drive exports, without a local-health fallback.
+Historical local health files and database records are retained but not imported
+or included in new report summaries.

@@ -77,55 +77,34 @@ def generate_report(config: Config, day: date) -> Path:
                     f"{row['samples']} measurement(s))"
                 )
         if not found_body:
-            lines.append("- No Welltory or health measurements imported for this day.")
+            lines.append("- No Welltory measurements imported for this day.")
 
         lines.extend(["", "## Fitness tracker (Google Drive)", ""])
-        def source_for(drive_metric: str, *, like: bool = False) -> tuple[str, str]:
-            operator = "LIKE" if like else "="
-            has_drive = conn.execute(
-                f"""
-                SELECT EXISTS(
-                    SELECT 1 FROM metric_events
-                    WHERE source = 'fitness_drive' AND metric {operator} ?
-                          AND occurred_at >= ? AND occurred_at < ?
-                )
-                """,
-                (drive_metric, start_utc, end_utc),
-            ).fetchone()[0]
-            return (
-                ("fitness_drive", "fitness_drive")
-                if has_drive
-                else ("health_sync", "health_sync")
-            )
-
-        steps_source, steps_prefix = source_for("fitness_drive.steps")
         steps = conn.execute(
             f"""
             SELECT SUM(value_num) AS total FROM metric_events
-            WHERE source = ? AND metric = '{steps_prefix}.steps'
+            WHERE source = 'fitness_drive' AND metric = 'fitness_drive.steps'
                   AND occurred_at >= ? AND occurred_at < ?
             """,
-            (steps_source, start_utc, end_utc),
+            (start_utc, end_utc),
         ).fetchone()["total"]
-        heart_source, heart_prefix = source_for("fitness_drive.heart_rate")
         heart_rate = conn.execute(
             f"""
             SELECT AVG(value_num) AS avg_value, MIN(value_num) AS min_value,
                    MAX(value_num) AS max_value, COUNT(*) AS samples
             FROM metric_events
-            WHERE source = ? AND metric = '{heart_prefix}.heart_rate'
+            WHERE source = 'fitness_drive' AND metric = 'fitness_drive.heart_rate'
                   AND occurred_at >= ? AND occurred_at < ?
             """,
-            (heart_source, start_utc, end_utc),
+            (start_utc, end_utc),
         ).fetchone()
-        sleep_source, sleep_prefix = source_for("fitness_drive.sleep.%_seconds", like=True)
         sleep = conn.execute(
             f"""
             SELECT SUM(value_num) AS seconds FROM metric_events
-            WHERE source = ? AND metric LIKE '{sleep_prefix}.sleep.%_seconds'
+            WHERE source = 'fitness_drive' AND metric LIKE 'fitness_drive.sleep.%_seconds'
                   AND occurred_at >= ? AND occurred_at < ?
             """,
-            (sleep_source, start_utc, end_utc),
+            (start_utc, end_utc),
         ).fetchone()["seconds"]
         if steps is not None:
             lines.append(f"- Steps: {_format_number(steps)}")
@@ -202,7 +181,8 @@ def generate_report(config: Config, day: date) -> Path:
         sources = conn.execute(
             """
             SELECT source, COUNT(*) AS count FROM metric_events
-            WHERE occurred_at >= ? AND occurred_at < ? GROUP BY source
+            WHERE occurred_at >= ? AND occurred_at < ?
+                  AND source IN ('fitness_drive', 'welltory', 'rescuetime') GROUP BY source
             """,
             (start_utc, end_utc),
         ).fetchall()

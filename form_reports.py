@@ -9,6 +9,7 @@ from collections.abc import Callable
 from typing import Any
 import re
 import sys
+from threading import Event, Lock, Thread
 from zoneinfo import ZoneInfo
 
 from live_life.collectors import collect_rescuetime, collect_todoist
@@ -21,6 +22,73 @@ from live_life.report import generate_report
 
 
 REPORT_NAME = re.compile(r"^(\d{4}-\d{2}-\d{2})\.md$")
+FRESHNESS_SOURCES = (
+    "Fitness bracelet (Google Drive)", "Welltory", "RescueTime", "Todoist", "Diary"
+)
+
+
+class FreshnessProgress:
+    """Animate the terminal summary while collection and report generation run."""
+
+    def __init__(self):
+        self.stream = sys.stdout
+        self.stopped = Event()
+        self.thread: Thread | None = None
+        self.visible = False
+        self.resolved: dict[str, str] = {}
+        self.lock = Lock()
+
+    def resolve(self, source: str, value: str):
+        with self.lock:
+            self.resolved[source] = value
+
+    def _clear(self):
+        if self.visible:
+            for _ in range(len(FRESHNESS_SOURCES) + 1):
+                self.stream.write("\033[1A\r\033[2K")
+            self.visible = False
+
+    def _render(self, spinner: str):
+        self._clear()
+        lines = [f"Data freshness — {spinner}"]
+        with self.lock:
+            lines.extend(
+                f"- {source}: {self.resolved.get(source, spinner)}"
+                for source in FRESHNESS_SOURCES
+            )
+        self.stream.write("\n".join(lines) + "\n")
+        self.stream.flush()
+        self.visible = True
+
+    def _animate(self):
+        frames = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+        frame = 1
+        while not self.stopped.wait(0.1):
+            self._render(frames[frame % len(frames)])
+            frame += 1
+
+    def start(self):
+        if not self.stream.isatty():
+            return
+        self.stopped.clear()
+        self._render("⠋")
+        self.thread = Thread(target=self._animate, daemon=True)
+        self.thread.start()
+
+    def stop(self):
+        self.stopped.set()
+        if self.thread is not None:
+            self.thread.join()
+            self.thread = None
+        self._clear()
+        self.stream.flush()
+
+    def approve(self, issues: list[str]) -> bool:
+        self.stop()
+        approved = prompt_for_approval(issues)
+        if approved:
+            self.start()
+        return approved
 
 
 class SourceApprovalRequired(RuntimeError):
@@ -142,10 +210,6 @@ def data_freshness(config: Config, now: datetime | None = None) -> dict[str, obj
             "SELECT MAX(logical_date) AS latest FROM journal_entries"
         ).fetchone()["latest"]
 
-    local_health = max(
-        filter(None, (metric_latest.get("health_sync"), metric_latest.get("health_drop"))),
-        default=None,
-    )
     return {
         "reported_at": current.isoformat(timespec="seconds"),
         "sources": {
@@ -154,18 +218,27 @@ def data_freshness(config: Config, now: datetime | None = None) -> dict[str, obj
             "RescueTime": metric_latest.get("rescuetime"),
             "Todoist": _local_timestamp(todoist_latest, config.timezone),
             "Diary": diary_latest,
-            "Local health inbox": local_health,
         },
     }
 
 
+def display_timestamp(value: str | None) -> str:
+    if not value:
+        return "no records"
+    if len(value) == 10:
+        return date.fromisoformat(value).strftime("%d/%m/%Y")
+    return datetime.fromisoformat(value).strftime("%d/%m/%Y %H:%M:%S")
+
+
 def format_data_freshness(summary: dict[str, object]) -> str:
     """Render a compact, value-free freshness report for terminal output."""
-    lines = [f"Data freshness — {summary['reported_at']}"]
+    heading = "incomplete" if summary.get("incomplete") else display_timestamp(summary["reported_at"])
+    lines = [f"Data freshness — {heading}"]
     sources = summary["sources"]
     assert isinstance(sources, dict)
     for source, latest in sources.items():
-        lines.append(f"- {source}: {latest or 'no records'}")
+        status = summary.get("source_status", {}).get(source)
+        lines.append(f"- {source}: {status or display_timestamp(latest)}")
     return "\n".join(lines)
 
 
@@ -173,6 +246,7 @@ def form_reports(
     config: Config,
     today: date | None = None,
     approve_unavailable: Callable[[list[str]], bool] | None = None,
+    on_source_finished: Callable[[str, str], None] | None = None,
 ) -> dict[str, object]:
     """Refresh shared inputs, collect each day, and overwrite its report."""
     ensure_layout(config)
@@ -182,6 +256,24 @@ def form_reports(
     today = today or datetime.now(ZoneInfo(config.timezone)).date()
     start = latest_report_day(config.reports)
     issues: list[str] = []
+    source_status: dict[str, str] = {}
+
+    def source_finished(source: str, *results: dict[str, Any], missing: bool = False):
+        if any(result.get("error") for result in results):
+            status = "failed"
+        elif missing or any(
+            value for result in results for key, value in result.items()
+            if key.startswith("skipped_")
+        ):
+            status = "unavailable"
+        else:
+            status = None
+        if status:
+            source_status[source] = status
+        if on_source_finished is not None:
+            latest = data_freshness(config)["sources"][source] if status is None else None
+            on_source_finished(source, status or display_timestamp(latest))
+
     drive_sync = _source_result(
         "Fitness bracelet / Google Drive",
         lambda: sync_fitness_drive(config, start, today),
@@ -203,6 +295,8 @@ def form_reports(
         "Fitness bracelet cache import", lambda: import_fitness_drive(config), issues
     )
 
+    source_finished("Fitness bracelet (Google Drive)", drive_sync, drive_import)
+
     welltory_paths = sorted(config.welltory_downloads.glob(config.welltory_pattern))
     if not welltory_paths:
         issues.append(
@@ -212,9 +306,11 @@ def form_reports(
     welltory = _source_result(
         "Welltory import", lambda: import_welltory(config, welltory_paths), issues
     )
+    source_finished("Welltory", welltory, missing=not welltory_paths)
     inbox = _source_result("Local inbox import", lambda: import_inbox(config), issues)
 
     diary = _source_result("Diary / Google Drive", lambda: sync_diary_drive(config), issues)
+    source_finished("Diary", inbox, diary)
 
     result: dict[str, object] = {
         "from": start.isoformat(),
@@ -246,6 +342,8 @@ def form_reports(
             rescuetime_available = not (
                 rescuetime.get("error") or rescuetime.get("skipped_no_token")
             )
+            if not rescuetime_available or day == today:
+                source_finished("RescueTime", rescuetime)
         else:
             rescuetime = {"skipped_after_source_failure": 1}
 
@@ -264,6 +362,8 @@ def form_reports(
             todoist_available = not (
                 todoist.get("error") or todoist.get("skipped_no_token")
             )
+            if not todoist_available or day == today:
+                source_finished("Todoist", todoist)
         else:
             todoist = {"skipped_after_source_failure": 1}
 
@@ -284,6 +384,8 @@ def form_reports(
     for item in days:
         item["report"] = str(generate_report(config, date.fromisoformat(item["date"])))
     result["data_freshness"] = data_freshness(config)
+    result["data_freshness"]["source_status"] = source_status
+    result["data_freshness"]["incomplete"] = bool(issues or source_status)
     if issues:
         result["approved_unavailable_sources"] = issues
     return result
@@ -291,10 +393,16 @@ def form_reports(
 
 def main() -> int:
     root = Path(__file__).resolve().parent
+    progress = FreshnessProgress()
     try:
-        result = form_reports(
-            load_config(root), approve_unavailable=prompt_for_approval
-        )
+        try:
+            progress.start()
+            result = form_reports(
+                load_config(root), approve_unavailable=progress.approve,
+                on_source_finished=progress.resolve,
+            )
+        finally:
+            progress.stop()
     except SourceApprovalRequired as exc:
         print(f"\n{exc}", file=sys.stderr)
         return 2

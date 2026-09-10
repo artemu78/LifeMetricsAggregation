@@ -73,7 +73,6 @@ def load_config(root: Path | None = None) -> Config:
 def ensure_layout(config: Config) -> None:
     config.database.parent.mkdir(parents=True, exist_ok=True)
     config.reports.mkdir(parents=True, exist_ok=True)
-    for name in ("diary", "health", "health_connect"):
-        (config.inbox / name).mkdir(parents=True, exist_ok=True)
+    (config.inbox / "diary").mkdir(parents=True, exist_ok=True)
     if config.fitness_drive_cache:
         config.fitness_drive_cache.mkdir(parents=True, exist_ok=True)
