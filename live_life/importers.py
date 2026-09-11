@@ -8,7 +8,6 @@ import csv
 import gzip
 import json
 import re
-import shutil
 
 from .config import Config
 from .db import connect, insert_metric, utc_now
@@ -34,6 +33,7 @@ UNITS = {
 
 
 def _file_hash(path: Path) -> str:
+    """Compute a file SHA-256 digest in bounded chunks for import change detection."""
     digest = sha256()
     with path.open("rb") as handle:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
@@ -42,6 +42,7 @@ def _file_hash(path: Path) -> str:
 
 
 def _as_utc_iso(value: str, timezone_name: str) -> str:
+    """Normalize a timestamp to UTC, interpreting naive values in the supplied timezone."""
     parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=ZoneInfo(timezone_name))
@@ -49,6 +50,7 @@ def _as_utc_iso(value: str, timezone_name: str) -> str:
 
 
 def _number(value: str) -> float | None:
+    """Parse a number with an optional percent sign, returning None for nonnumeric values."""
     cleaned = value.strip().replace("%", "")
     if not cleaned:
         return None
@@ -58,55 +60,8 @@ def _number(value: str) -> float | None:
         return None
 
 
-def _health_sync_timestamp(row: dict[str, str], timezone_name: str) -> str | None:
-    """Return a UTC timestamp from Health Sync's Date/Time CSV columns."""
-    date_value = (row.get("Date") or "").strip()
-    time_value = (row.get("Time") or "").strip()
-    if not date_value:
-        return None
-    value = date_value if " " in date_value else f"{date_value} {time_value}".strip()
-    for pattern in ("%Y.%m.%d %H:%M:%S", "%Y-%m-%d %H:%M:%S"):
-        try:
-            parsed = datetime.strptime(value, pattern).replace(tzinfo=ZoneInfo(timezone_name))
-            return parsed.astimezone(timezone.utc).isoformat()
-        except ValueError:
-            pass
-    try:
-        return _as_utc_iso(value, timezone_name)
-    except ValueError:
-        return None
-
-
-def _import_health_sync_row(config: Config, conn, row: dict[str, str]) -> bool:
-    """Import one Health Sync CSV row; returns True when it was accepted."""
-    occurred_at = _health_sync_timestamp(row, config.timezone)
-    if not occurred_at:
-        return False
-    if "Heart rate" in row:
-        metric, raw_value, unit = "health_sync.heart_rate", row["Heart rate"], "bpm"
-    elif "Steps" in row:
-        metric, raw_value, unit = "health_sync.steps", row["Steps"], "count"
-    elif "Duration in seconds" in row:
-        stage = (row.get("Sleep stage") or "unknown").strip().lower().replace(" ", "_")
-        metric, raw_value, unit = f"health_sync.sleep.{stage}_seconds", row["Duration in seconds"], "s"
-    else:
-        return False
-    external_id = sha256(json.dumps(row, sort_keys=True).encode("utf-8")).hexdigest()
-    numeric = _number(raw_value)
-    return insert_metric(
-        conn,
-        source="health_sync",
-        external_id=external_id,
-        occurred_at=occurred_at,
-        metric=metric,
-        value_num=numeric,
-        value_text=None if numeric is not None else raw_value,
-        unit=unit,
-        payload=row,
-    )
-
-
 def import_welltory(config: Config, paths: list[Path] | None = None) -> dict[str, int]:
+    """Import changed Welltory CSV files and return file, row, and new metric counts."""
     if paths is None:
         paths = sorted(config.welltory_downloads.glob(config.welltory_pattern))
     files = rows = metrics = 0
@@ -170,6 +125,7 @@ SLEEP_STAGES = {
 
 
 def _fitness_documents(path: Path) -> list[dict]:
+    """Read plain or gzipped JSON or NDJSON exports into header-and-record documents."""
     opener = gzip.open if path.name.endswith(".gz") else open
     with opener(path, "rt", encoding="utf-8-sig") as handle:
         content = handle.read()
@@ -187,12 +143,14 @@ def _fitness_documents(path: Path) -> list[dict]:
 
 
 def _duration_seconds(start: str, end: str) -> float:
+    """Return the signed elapsed seconds between two ISO timestamps."""
     start_time = datetime.fromisoformat(start.replace("Z", "+00:00"))
     end_time = datetime.fromisoformat(end.replace("Z", "+00:00"))
     return (end_time - start_time).total_seconds()
 
 
 def _fitness_metrics(record: dict) -> list[tuple[str, str, float, str]]:
+    """Convert a supported fitness record into timestamp, metric, value, and unit tuples."""
     record_type = record.get("recordType")
     start = record.get("startTime")
     if not start:
@@ -289,35 +247,11 @@ def import_fitness_drive(config: Config) -> dict[str, int]:
 
 
 def import_inbox(config: Config) -> dict[str, int]:
-    health_rows = diary_entries = archived = 0
+    """Import dated local diary files only when no Google Doc diary is configured."""
+    diary_entries = 0
     with connect(config.database) as conn:
-        for path in sorted((config.inbox / "health").glob("*.csv")):
-            with path.open(newline="", encoding="utf-8-sig") as handle:
-                for row in csv.DictReader(handle):
-                    if _import_health_sync_row(config, conn, row):
-                        health_rows += 1
-                        continue
-                    timestamp = row.get("timestamp", "")
-                    metric = row.get("metric", "")
-                    if not timestamp or not metric:
-                        continue
-                    external_id = sha256(
-                        json.dumps(row, sort_keys=True).encode("utf-8")
-                    ).hexdigest()
-                    numeric = _number(row.get("value", ""))
-                    if insert_metric(
-                        conn,
-                        source="health_drop",
-                        external_id=external_id,
-                        occurred_at=_as_utc_iso(timestamp, config.timezone),
-                        metric=f"health.{metric}",
-                        value_num=numeric,
-                        value_text=None if numeric is not None else row.get("value"),
-                        unit=row.get("unit") or None,
-                        payload=row,
-                    ):
-                        health_rows += 1
-        for path in sorted((config.inbox / "diary").glob("*.md")):
+        diary_paths = [] if config.diary_google_doc_id else sorted((config.inbox / "diary").glob("*.md"))
+        for path in diary_paths:
             match = re.fullmatch(r"(\d{4}-\d{2}-\d{2})", path.stem)
             if not match:
                 continue
@@ -331,11 +265,4 @@ def import_inbox(config: Config) -> dict[str, int]:
                 (match.group(1), path.read_text(encoding="utf-8"), str(path), utc_now()),
             )
             diary_entries += 1
-        archive_dir = config.inbox / "health_connect" / "archive"
-        archive_dir.mkdir(parents=True, exist_ok=True)
-        for path in sorted((config.inbox / "health_connect").glob("*.zip")):
-            destination = archive_dir / path.name
-            if not destination.exists():
-                shutil.copy2(path, destination)
-                archived += 1
-    return {"health_rows": health_rows, "diary_entries": diary_entries, "health_connect_archived": archived}
+    return {"diary_entries": diary_entries}

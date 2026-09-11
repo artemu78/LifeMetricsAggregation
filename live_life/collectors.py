@@ -13,12 +13,14 @@ from .db import connect, insert_metric, utc_now
 
 
 def logical_window(day: date, config: Config) -> tuple[datetime, datetime]:
+    """Return timezone-aware start and exclusive end times for a logical day."""
     tz = ZoneInfo(config.timezone)
     start = datetime.combine(day, time(config.day_boundary_hour), tzinfo=tz)
     return start, start + timedelta(days=1)
 
 
 def _get_json(url: str, token: str) -> object:
+    """Fetch and decode JSON with bearer authentication and a 30-second timeout."""
     request = Request(
         url,
         headers={
@@ -32,6 +34,7 @@ def _get_json(url: str, token: str) -> object:
 
 
 def collect_rescuetime(config: Config, day: date) -> dict[str, int]:
+    """Store activity and productivity events within the logical day, skipping duplicates."""
     token = os.environ.get(config.rescuetime_key_env, "").strip()
     if not token:
         return {"queries": 0, "events": 0, "skipped_no_token": 1}
@@ -49,7 +52,7 @@ def collect_rescuetime(config: Config, day: date) -> dict[str, int]:
                     "format": "json",
                 }
             )
-            payload = _get_json(f"https://www.rescuetime.com/anapi/data?{params}", token)
+            payload = _get_json(f"{config.rescuetime_api_url}?{params}", token)
             queries += 1
             headers = payload.get("row_headers", [])
             for values in payload.get("rows", []):
@@ -107,6 +110,7 @@ def collect_rescuetime(config: Config, day: date) -> dict[str, int]:
 
 
 def collect_todoist(config: Config, day: date) -> dict[str, int]:
+    """Store task completions and creation times, or report a missing API token."""
     token = os.environ.get(config.todoist_token_env, "").strip()
     if not token:
         return {"completed": 0, "created": 0, "skipped_no_token": 1}
@@ -121,7 +125,7 @@ def collect_todoist(config: Config, day: date) -> dict[str, int]:
             if cursor:
                 params["cursor"] = cursor
             url = (
-                "https://api.todoist.com/api/v1/tasks/completed/by_completion_date?"
+                f"{config.todoist_api_base_url}/tasks/completed/by_completion_date?"
                 + urlencode(params)
             )
             payload = _get_json(url, token)
@@ -178,7 +182,7 @@ def collect_todoist(config: Config, day: date) -> dict[str, int]:
             params = {"limit": 200}
             if cursor:
                 params["cursor"] = cursor
-            payload = _get_json("https://api.todoist.com/api/v1/tasks?" + urlencode(params), token)
+            payload = _get_json(f"{config.todoist_api_base_url}/tasks?" + urlencode(params), token)
             items = payload.get("results", payload) if isinstance(payload, dict) else payload
             for item in items:
                 created_at = item.get("created_at") or item.get("added_at")

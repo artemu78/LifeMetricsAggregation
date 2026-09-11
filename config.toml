@@ -1,22 +1,5 @@
 [general]
-timezone = "Europe/Moscow"
+timezone = 'Europe/Moscow'
 day_boundary_hour = 5
-database = "data/life.db"
-inbox = "data/inbox"
-reports = "reports"
-
-[fitness_drive]
-folder_id = "1HkjtMrBa8hv_LPbtYbyIUXfxgUVfsfNO"
-client_secret_file = "private/google-drive-client-secret.json"
-token_file = "data/google-drive-token.json"
-cache_dir = "data/inbox/fitness_drive"
-
-[welltory]
-downloads_dir = "/Users/artemreva/Downloads"
-file_pattern = "WELLTORY_HRV_DATA_EXPORT_*.csv"
-
-[rescuetime]
-api_key_env = "RESCUETIME_API_KEY"
-
-[todoist]
-token_env = "TODOIST_API_TOKEN"
+database = 'data/life.db'
+reports = 'reports'

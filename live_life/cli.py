@@ -16,10 +16,12 @@ from .report import default_report_day, generate_report
 
 
 def _day(value: str | None, config) -> date:
+    """Parse an explicit report date or select the latest completed logical day."""
     return date.fromisoformat(value) if value else default_report_day(config)
 
 
 def parser() -> argparse.ArgumentParser:
+    """Build the command-line parser for collection, import, export, and reporting commands."""
     result = argparse.ArgumentParser(prog="live-life")
     sub = result.add_subparsers(dest="command", required=True)
     sub.add_parser("init-db")
@@ -44,6 +46,7 @@ def parser() -> argparse.ArgumentParser:
 
 
 def _date_range(start: date, end: date):
+    """Yield an inclusive date range, raising ValueError when its endpoints are reversed."""
     if end < start:
         raise ValueError("--to must be on or after --from")
     current = start
@@ -53,6 +56,7 @@ def _date_range(start: date, end: date):
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Dispatch the selected command, print its result, and return a success exit code."""
     args = parser().parse_args(argv)
     config = load_config()
     ensure_layout(config)

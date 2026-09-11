@@ -4,7 +4,7 @@ from dataclasses import replace
 from datetime import date, datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from contextlib import redirect_stderr, redirect_stdout
+from contextlib import ExitStack, redirect_stderr, redirect_stdout
 from io import StringIO
 import csv
 import json
@@ -21,6 +21,7 @@ from live_life.fitness_drive import FOLDER_MIME_TYPE, sync_fitness_drive
 from live_life.importers import import_fitness_drive, import_inbox, import_welltory
 from live_life.report import generate_report
 from form_reports import (
+    FreshnessProgress,
     SourceApprovalRequired,
     data_freshness,
     format_data_freshness,
@@ -33,6 +34,110 @@ from form_reports import (
 
 
 class PipelineTest(unittest.TestCase):
+    def test_source_progress_resolves_after_saved_data_before_reports(self):
+        """Verify source progress resolves after saved data before reports."""
+        self.config.reports.mkdir(exist_ok=True)
+        (self.config.reports / "2026-09-01.md").write_text("old")
+        (self.config.welltory_downloads / "WELLTORY_sample.csv").write_text("Date\n")
+        events = []
+        sources = ["Fitness bracelet (Google Drive)", "Welltory", "Diary", "RescueTime", "Todoist"]
+
+        def stage(name):
+            """Build a fake pipeline stage that records when it runs."""
+            def run(*args):
+                """Record the fake stage invocation and return an empty result."""
+                events.append(name)
+                return {}
+            return run
+
+        def collect_todoist(config, day):
+            """Record collection and insert a synthetic task to exercise freshness updates."""
+            events.append("todoist " + day.isoformat())
+            with connect(config.database) as conn:
+                conn.execute(
+                    "INSERT INTO completed_tasks "
+                    "(source, external_id, content, project_id, completed_at, payload_json, imported_at) "
+                    "VALUES ('todoist', ?, '', NULL, ?, '{}', '')",
+                    (day.isoformat(), day.isoformat() + "T18:30:00+03:00"),
+                )
+            return {}
+
+        def resolved(source, value):
+            """Capture a source completion notification in the event log."""
+            events.append((source, value))
+
+        def save_report(*args):
+            """Check that every source resolved before recording report generation."""
+            self.assertEqual([e[0] for e in events if isinstance(e, tuple)], sources)
+            events.append("report saved")
+            return "report.md"
+
+        with ExitStack() as stack:
+            for name in ("sync_fitness_drive", "import_fitness_drive", "import_welltory",
+                         "import_inbox", "sync_diary_drive", "collect_rescuetime"):
+                stack.enter_context(patch("form_reports." + name, side_effect=stage(name)))
+            stack.enter_context(patch("form_reports.collect_todoist", side_effect=collect_todoist))
+            stack.enter_context(patch("form_reports.generate_report", side_effect=save_report))
+            result = form_reports(self.config, today=date(2026, 9, 2), on_source_finished=resolved)
+
+        self.assertLess(events.index((sources[0], "no records")), events.index("import_welltory"))
+        self.assertLess(events.index(("Diary", "no records")), events.index("collect_rescuetime"))
+        self.assertGreater(events.index(("RescueTime", "no records")), events.index("todoist 2026-09-01"))
+        self.assertIn(("Todoist", "02/09/2026 18:30:00"), events)
+        self.assertFalse(result["data_freshness"]["incomplete"])
+        self.assertEqual(events[-2:], ["report saved", "report saved"])
+
+    def test_partial_summary_does_not_display_success_timestamp(self):
+        """Verify partial summary does not display success timestamp."""
+        summary = {
+            "reported_at": "2026-09-10T21:00:00+03:00",
+            "sources": {"Todoist": "2026-09-09T18:00:00+03:00"},
+            "source_status": {"Todoist": "failed"},
+            "incomplete": True,
+        }
+        self.assertEqual(format_data_freshness(summary),
+                         "Data freshness — incomplete\n- Todoist: failed")
+
+    def test_terminal_progress_is_visible_during_work_and_cleared_on_failure(self):
+        """Verify terminal progress is visible during work and cleared on failure."""
+        stdout = StringIO()
+        stdout.isatty = lambda: True
+
+        def fail_during_work(*args, **kwargs):
+            """Check that progress is visible before simulating a collection failure."""
+            self.assertIn("Data freshness — ⠋\n", stdout.getvalue())
+            self.assertIn("- Diary: ⠋\n", stdout.getvalue())
+            raise RuntimeError("collection failed")
+
+        with redirect_stdout(stdout), patch("form_reports.load_config"), patch(
+            "form_reports.form_reports", side_effect=fail_during_work
+        ):
+            with self.assertRaisesRegex(RuntimeError, "collection failed"):
+                form_reports_main()
+        self.assertTrue(stdout.getvalue().endswith("\033[1A\r\033[2K" * 6))
+
+    def test_terminal_progress_pauses_for_approval_and_resumes(self):
+        """Verify terminal progress pauses for approval and resumes."""
+        stdout = StringIO()
+        stdout.isatty = lambda: True
+        with redirect_stdout(stdout):
+            progress = FreshnessProgress()
+
+            def approve(issues):
+                """Check that animation is paused while granting source approval."""
+                self.assertIsNone(progress.thread)
+                self.assertFalse(progress.visible)
+                return True
+
+            try:
+                progress.start()
+                with patch("form_reports.prompt_for_approval", side_effect=approve):
+                    self.assertTrue(progress.approve(["Source unavailable"]))
+                self.assertTrue(progress.visible)
+                self.assertTrue(progress.thread.is_alive())
+            finally:
+                progress.stop()
+
     @patch("form_reports.collect_todoist", return_value={"completed": 0})
     @patch("form_reports.collect_rescuetime", return_value={"events": 0})
     @patch("form_reports.import_welltory", return_value={"files": 0})
@@ -40,6 +145,7 @@ class PipelineTest(unittest.TestCase):
     def test_form_reports_recreates_latest_day_through_today(
         self, import_inbox_mock, import_welltory_mock, rescuetime_mock, todoist_mock
     ):
+        """Verify form reports recreates latest day through today."""
         self.config.reports.mkdir(exist_ok=True)
         (self.config.reports / "2026-08-30.md").write_text("old", encoding="utf-8")
         (self.config.reports / "2026-08-31.md").write_text("incomplete", encoding="utf-8")
@@ -68,7 +174,7 @@ class PipelineTest(unittest.TestCase):
     @patch("form_reports.collect_todoist", return_value={"skipped_no_token": 1})
     @patch("form_reports.collect_rescuetime", return_value={"skipped_no_token": 1})
     @patch("form_reports.import_welltory", return_value={"files": 0})
-    @patch("form_reports.import_inbox", return_value={"health_rows": 0})
+    @patch("form_reports.import_inbox", return_value={"diary_entries": 0})
     @patch("form_reports.import_fitness_drive", return_value={"files": 0})
     @patch("form_reports.sync_fitness_drive", return_value={"skipped_not_authorized": 1})
     def test_form_reports_requires_approval_when_sources_are_unavailable(
@@ -80,6 +186,7 @@ class PipelineTest(unittest.TestCase):
         rescuetime_mock,
         todoist_mock,
     ):
+        """Verify form reports requires approval when sources are unavailable."""
         self.config.reports.mkdir(exist_ok=True)
         report = self.config.reports / "2026-09-01.md"
         report.write_text("unchanged", encoding="utf-8")
@@ -92,7 +199,7 @@ class PipelineTest(unittest.TestCase):
     @patch("form_reports.collect_todoist", return_value={"skipped_no_token": 1})
     @patch("form_reports.collect_rescuetime", return_value={"skipped_no_token": 1})
     @patch("form_reports.import_welltory", return_value={"files": 0})
-    @patch("form_reports.import_inbox", return_value={"health_rows": 0})
+    @patch("form_reports.import_inbox", return_value={"diary_entries": 0})
     @patch("form_reports.import_fitness_drive", return_value={"files": 0})
     @patch("form_reports.sync_fitness_drive", return_value={"skipped_not_authorized": 1})
     def test_form_reports_continues_after_explicit_approval(
@@ -104,6 +211,7 @@ class PipelineTest(unittest.TestCase):
         rescuetime_mock,
         todoist_mock,
     ):
+        """Verify form reports continues after explicit approval."""
         self.config.reports.mkdir(exist_ok=True)
         report = self.config.reports / "2026-09-01.md"
         report.write_text("old", encoding="utf-8")
@@ -123,7 +231,7 @@ class PipelineTest(unittest.TestCase):
     @patch("form_reports.collect_todoist", return_value={"completed": 0, "created": 0})
     @patch("form_reports.collect_rescuetime", return_value={"events": 0})
     @patch("form_reports.import_welltory", return_value={"files": 1})
-    @patch("form_reports.import_inbox", return_value={"health_rows": 0})
+    @patch("form_reports.import_inbox", return_value={"diary_entries": 0})
     @patch("form_reports.import_fitness_drive", return_value={"files": 0})
     @patch("form_reports.sync_fitness_drive", return_value={"files": 0, "downloaded": 0})
     def test_form_reports_does_not_request_approval_when_sources_are_available(
@@ -135,6 +243,7 @@ class PipelineTest(unittest.TestCase):
         rescuetime_mock,
         todoist_mock,
     ):
+        """Verify form reports does not request approval when sources are available."""
         self.config.reports.mkdir(exist_ok=True)
         (self.config.reports / "2026-09-01.md").write_text("old", encoding="utf-8")
         (self.config.welltory_downloads / "WELLTORY_sample.csv").write_text(
@@ -154,7 +263,7 @@ class PipelineTest(unittest.TestCase):
     @patch("form_reports.collect_todoist", side_effect=OSError("Todoist offline"))
     @patch("form_reports.collect_rescuetime", side_effect=OSError("network down"))
     @patch("form_reports.import_welltory", return_value={"files": 1})
-    @patch("form_reports.import_inbox", return_value={"health_rows": 0})
+    @patch("form_reports.import_inbox", return_value={"diary_entries": 0})
     @patch("form_reports.import_fitness_drive", return_value={"files": 0})
     @patch("form_reports.sync_fitness_drive", return_value={"files": 0, "downloaded": 0})
     def test_form_reports_requests_approval_for_network_failure_and_stops_retrying_source(
@@ -166,6 +275,7 @@ class PipelineTest(unittest.TestCase):
         rescuetime_mock,
         todoist_mock,
     ):
+        """Verify form reports requests approval for network failure and stops retrying source."""
         self.config.reports.mkdir(exist_ok=True)
         (self.config.reports / "2026-09-01.md").write_text("old", encoding="utf-8")
         (self.config.welltory_downloads / "WELLTORY_sample.csv").write_text(
@@ -189,7 +299,7 @@ class PipelineTest(unittest.TestCase):
     @patch("form_reports.collect_todoist", return_value={"skipped_no_token": 1})
     @patch("form_reports.collect_rescuetime", return_value={"events": 0})
     @patch("form_reports.import_welltory", return_value={"files": 1})
-    @patch("form_reports.import_inbox", return_value={"health_rows": 0})
+    @patch("form_reports.import_inbox", return_value={"diary_entries": 0})
     @patch("form_reports.import_fitness_drive", return_value={"files": 0})
     @patch("form_reports.sync_fitness_drive", return_value={"files": 0, "downloaded": 0})
     def test_form_reports_preserves_report_when_human_denies_approval(
@@ -201,6 +311,7 @@ class PipelineTest(unittest.TestCase):
         rescuetime_mock,
         todoist_mock,
     ):
+        """Verify form reports preserves report when human denies approval."""
         self.config.reports.mkdir(exist_ok=True)
         report = self.config.reports / "2026-09-01.md"
         report.write_text("unchanged", encoding="utf-8")
@@ -218,6 +329,7 @@ class PipelineTest(unittest.TestCase):
         self.assertEqual(report.read_text(encoding="utf-8"), "unchanged")
 
     def test_approval_prompt_requires_terminal_and_accepts_explicit_yes(self):
+        """Verify approval prompt requires terminal and accepts explicit yes."""
         stderr = StringIO()
         with patch("form_reports.sys.stdin.isatty", return_value=False):
             with redirect_stderr(stderr):
@@ -230,6 +342,7 @@ class PipelineTest(unittest.TestCase):
                     self.assertTrue(prompt_for_approval(["RescueTime is unavailable."]))
 
     def test_approval_prompt_rejects_interrupted_input(self):
+        """Verify approval prompt rejects interrupted input."""
         with patch("form_reports.sys.stdin.isatty", return_value=True):
             with patch("builtins.input", side_effect=EOFError):
                 with redirect_stderr(StringIO()):
@@ -240,6 +353,7 @@ class PipelineTest(unittest.TestCase):
     def test_form_reports_main_prints_result_and_returns_success(
         self, form_reports_mock, load_config_mock
     ):
+        """Verify form reports main prints result and returns success."""
         form_reports_mock.return_value = {
             "days": [],
             "data_freshness": {
@@ -254,11 +368,12 @@ class PipelineTest(unittest.TestCase):
         self.assertEqual(exit_status, 0)
         self.assertEqual(
             stdout.getvalue(),
-            "Data freshness — 2026-09-10T12:00:00+03:00\n"
-            "- Welltory: 2026-09-10T10:00:00+03:00\n",
+            "Data freshness — 10/09/2026 12:00:00\n"
+            "- Welltory: 10/09/2026 10:00:00\n",
         )
 
     def test_data_freshness_reports_latest_record_for_each_source(self):
+        """Verify data freshness reports latest record for each source."""
         with connect(self.config.database) as conn:
             insert_metric(
                 conn,
@@ -304,6 +419,7 @@ class PipelineTest(unittest.TestCase):
     def test_form_reports_main_returns_two_when_approval_is_not_granted(
         self, form_reports_mock, load_config_mock
     ):
+        """Verify form reports main returns two when approval is not granted."""
         stderr = StringIO()
         with redirect_stderr(stderr):
             exit_status = form_reports_main()
@@ -312,6 +428,7 @@ class PipelineTest(unittest.TestCase):
         self.assertIn("Todoist token is missing", stderr.getvalue())
 
     def test_date_range_is_inclusive(self):
+        """Verify date range is inclusive."""
         self.assertEqual(
             list(_date_range(date(2026, 8, 30), date(2026, 9, 1))),
             [date(2026, 8, 30), date(2026, 8, 31), date(2026, 9, 1)],
@@ -323,10 +440,12 @@ class PipelineTest(unittest.TestCase):
             list(inclusive_days(date(2026, 9, 2), date(2026, 9, 1)))
 
     def test_latest_report_day_explains_how_to_create_first_report(self):
+        """Verify latest report day explains how to create first report."""
         with self.assertRaisesRegex(RuntimeError, "create the first report"):
             latest_report_day(self.config.reports)
 
     def test_todoist_recovers_creation_time_from_completed_tasks(self):
+        """Verify todoist recovers creation time from completed tasks."""
         completed = {
             "items": [
                 {
@@ -350,6 +469,7 @@ class PipelineTest(unittest.TestCase):
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM created_tasks").fetchone()[0], 1)
 
     def setUp(self):
+        """Create isolated temporary paths and configuration for each test."""
         self.temp = TemporaryDirectory()
         root = Path(self.temp.name)
         self.config = Config(
@@ -368,9 +488,11 @@ class PipelineTest(unittest.TestCase):
         self.config.welltory_downloads.mkdir()
 
     def tearDown(self):
+        """Remove temporary test files and databases."""
         self.temp.cleanup()
 
     def write_sample(self) -> Path:
+        """Write a synthetic Welltory CSV fixture and return its path."""
         path = self.config.welltory_downloads / "WELLTORY_sample.csv"
         with path.open("w", newline="", encoding="utf-8") as handle:
             writer = csv.DictWriter(
@@ -387,6 +509,7 @@ class PipelineTest(unittest.TestCase):
         return path
 
     def test_import_is_idempotent_and_boundary_is_applied(self):
+        """Verify import is idempotent and boundary is applied."""
         path = self.write_sample()
         first = import_welltory(self.config, [path])
         second = import_welltory(self.config, [path])
@@ -403,6 +526,7 @@ class PipelineTest(unittest.TestCase):
         self.assertEqual(count, 6)
 
     def test_report_keeps_diary_content_private(self):
+        """Verify report keeps diary content private."""
         diary_dir = self.config.inbox / "diary"
         (diary_dir / "2026-07-17.md").write_text("private reflection", encoding="utf-8")
         import_inbox(self.config)
@@ -411,6 +535,7 @@ class PipelineTest(unittest.TestCase):
         self.assertNotIn("private reflection", report)
 
     def test_report_labels_rescuetime_productivity_levels(self):
+        """Verify report labels rescuetime productivity levels."""
         productivity_levels = {
             "-2": "Distracting",
             "-1": "Personal",
@@ -438,31 +563,34 @@ class PipelineTest(unittest.TestCase):
             self.assertIn(f"- {label}: 1.00 h", report)
             self.assertNotIn(f"- {code}: 1.00 h", report)
 
-    def test_imports_health_sync_csvs(self):
+    def test_retired_local_health_is_ignored_and_preserved(self):
+        """Verify retired local health is ignored and preserved."""
         health = self.config.inbox / "health"
-        (health / "steps.csv").write_text(
-            "Date,Time,Steps\n2026.07.18 10:00:00,10:00:00,42\n", encoding="utf-8"
-        )
-        (health / "heart.csv").write_text(
-            "Date,Time,Heart rate,Source\n2026.07.18 10:00:00,10:00:00,61,com.xiaomi.wearable\n",
-            encoding="utf-8",
-        )
-        (health / "sleep.csv").write_text(
-            "Date,Time,Duration in seconds,Sleep stage\n2026.07.18 03:00:00,03:00:00,1800,deep\n",
-            encoding="utf-8",
-        )
-        result = import_inbox(self.config)
-        self.assertEqual(result["health_rows"], 3)
+        self.assertFalse(health.exists())
+        health.mkdir()
+        legacy = health / "steps.csv"
+        legacy.write_text("Date,Time,Steps\n2026.07.18 10:00:00,10:00:00,42\n")
+        self.assertEqual(import_inbox(self.config), {"diary_entries": 0})
         with connect(self.config.database) as conn:
-            metrics = {row[0] for row in conn.execute("SELECT metric FROM metric_events")}
-        self.assertTrue({"health_sync.steps", "health_sync.heart_rate", "health_sync.sleep.deep_seconds"} <= metrics)
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM metric_events").fetchone()[0], 0)
+            for metric in ("steps", "heart_rate", "sleep.deep_seconds"):
+                insert_metric(conn, source="health_sync", external_id=metric,
+                              occurred_at="2026-07-18T10:00:00+00:00",
+                              metric="health_sync." + metric, value_num=42,
+                              value_text=None, unit=None, payload={})
         report = generate_report(self.config, date(2026, 7, 18)).read_text()
-        self.assertIn("Steps: 42", report)
-        self.assertIn("Heart rate: avg 61 bpm", report)
-        previous_report = generate_report(self.config, date(2026, 7, 17)).read_text()
-        self.assertIn("Sleep stages recorded: 0.50 h", previous_report)
+        self.assertIn("No Google Drive fitness export imported", report)
+        self.assertNotIn("health_sync", report)
+        self.assertNotIn("- Steps:", report)
+        self.assertNotIn("- Heart rate:", report)
+        self.assertNotIn("- Sleep stages recorded:", report)
+        self.assertNotIn("Local health inbox", data_freshness(self.config)["sources"])
+        self.assertTrue(legacy.exists())
+        with connect(self.config.database) as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM metric_events").fetchone()[0], 3)
 
     def test_syncs_year_month_files_and_optional_day_folders(self):
+        """Verify syncs year month files and optional day folders."""
         cache = self.config.root / "data/inbox/fitness_drive"
         config = replace(
             self.config,
@@ -486,9 +614,11 @@ class PipelineTest(unittest.TestCase):
             }
 
             def list_children(self, folder_id):
+                """Return the synthetic folder contents without contacting Google Drive."""
                 return self.children.get(folder_id, [])
 
             def download(self, file_id, destination):
+                """Write the synthetic export document to the requested cache path."""
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 destination.write_text(json.dumps(document), encoding="utf-8")
 
@@ -498,7 +628,8 @@ class PipelineTest(unittest.TestCase):
         self.assertEqual(first, {"files": 2, "downloaded": 2, "skipped_not_authorized": 0})
         self.assertEqual(second["downloaded"], 0)
 
-    def test_imports_drive_schema_and_prefers_it_over_legacy_csv(self):
+    def test_imports_drive_schema_and_ignores_retired_csv(self):
+        """Verify imports drive schema and ignores retired csv."""
         cache = self.config.root / "data/inbox/fitness_drive"
         cache.mkdir(parents=True)
         config = replace(self.config, fitness_drive_cache=cache)
@@ -535,6 +666,7 @@ class PipelineTest(unittest.TestCase):
         }
         (cache / "batch.json").write_text(json.dumps(document), encoding="utf-8")
         legacy = config.inbox / "health" / "steps.csv"
+        legacy.parent.mkdir()
         legacy.write_text(
             "Date,Time,Steps\n2026.07.18 13:00:00,13:00:00,999\n", encoding="utf-8"
         )
