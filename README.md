@@ -18,7 +18,7 @@ python3 -m live_life report
 ```
 
 `report` defaults to the most recently completed logical day. Reports are saved
-under `reports/YYYY-MM-DD.md`.
+under `data/reports/YYYY-MM-DD.md`.
 
 ## API setup
 
@@ -115,7 +115,7 @@ For the routine catch-up, run the single script:
 python3 form_reports.py
 ```
 
-It finds the latest `reports/YYYY-MM-DD.md`, regenerates that day because its
+It finds the latest `data/reports/YYYY-MM-DD.md`, regenerates that day because its
 data may have been incomplete, and then creates every report through today's
 date (inclusive). It uses the configured timezone and can be run from any
 working directory.

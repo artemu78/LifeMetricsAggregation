@@ -14,7 +14,7 @@ class SourceConfigTest(TestCase):
             root = Path(directory).resolve()
             (root / 'config.toml').write_text(
                 '[general]\ntimezone="UTC"\nday_boundary_hour=5\n'
-                'database="data/life.db"\nreports="reports"\n')
+                'database="data/life.db"\nreports="data/reports"\n')
             (root / '.env').write_text(
                 'TODOIST_API_TOKEN=example-test-token\n'
                 'TODOIST_API_BASE_URL=https://example.invalid/api/\n'
@@ -29,6 +29,7 @@ class SourceConfigTest(TestCase):
                 'DIARY_GOOGLE_DOC_ID=test-doc\n')
             with patch.dict(os.environ, {'TODOIST_API_TOKEN': 'shell-token'}, clear=True):
                 config = load_config(root)
+                self.assertEqual(config.reports, root / 'data/reports')
                 self.assertEqual(os.environ[config.todoist_token_env], 'shell-token')
                 self.assertEqual(config.todoist_api_base_url, 'https://example.invalid/api')
                 self.assertEqual(config.rescuetime_api_url, 'https://example.invalid/data')

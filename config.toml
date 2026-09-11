@@ -2,4 +2,4 @@
 timezone = 'Europe/Moscow'
 day_boundary_hour = 5
 database = 'data/life.db'
-reports = 'reports'
+reports = 'data/reports'

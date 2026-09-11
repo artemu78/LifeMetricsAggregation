@@ -478,7 +478,7 @@ class PipelineTest(unittest.TestCase):
             day_boundary_hour=5,
             database=root / "data/life.db",
             inbox=root / "data/inbox",
-            reports=root / "reports",
+            reports=root / "data/reports",
             welltory_downloads=root / "downloads",
             welltory_pattern="WELLTORY*.csv",
             rescuetime_key_env="TEST_RESCUETIME_KEY",
