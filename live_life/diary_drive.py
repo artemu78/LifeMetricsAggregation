@@ -13,6 +13,7 @@ DATE_HEADING = re.compile(r"^(?:#{1,6}\s+)?(\d{1,2}\.\d{1,2}\.\d{4}|\d{4}-\d{2}-
 
 
 def parse_diary(text: str) -> dict[str, str]:
+    """Parse dated sections, combine repeated dates, and reject missing or invalid headings."""
     entries: dict[str, list[str]] = {}
     current = None
     for line in text.lstrip('\ufeff').splitlines():
@@ -32,6 +33,7 @@ def parse_diary(text: str) -> dict[str, str]:
 
 
 def sync_diary_drive(config: Config, *, reader=None) -> dict[str, int]:
+    """Export the configured diary and reconcile its entries after successful parsing."""
     if not config.diary_google_doc_id:
         return {'skipped_not_configured': 1}
     reader = reader if reader is not None else GoogleDriveReader(config)

@@ -28,6 +28,7 @@ class Config:
 
 
 def load_dotenv(path: Path) -> None:
+    """Load simple environment assignments without overriding existing shell values."""
     if not path.exists():
         return
     for raw in path.read_text(encoding="utf-8").splitlines():
@@ -39,6 +40,7 @@ def load_dotenv(path: Path) -> None:
 
 
 def load_config(root: Path | None = None) -> Config:
+    """Combine general TOML settings with source configuration from the environment."""
     root = (root or Path.cwd()).resolve()
     path = root / "config.toml"
     with path.open("rb") as handle:
@@ -47,6 +49,7 @@ def load_config(root: Path | None = None) -> Config:
     general = raw["general"]
 
     def project_path(value: str | None) -> Path | None:
+        """Expand a home-relative path and resolve relative values against the project root."""
         return root / Path(value).expanduser() if value else None
 
     return Config(
@@ -71,6 +74,7 @@ def load_config(root: Path | None = None) -> Config:
 
 
 def ensure_layout(config: Config) -> None:
+    """Create the database parent, reports, diary inbox, and configured cache directories."""
     config.database.parent.mkdir(parents=True, exist_ok=True)
     config.reports.mkdir(parents=True, exist_ok=True)
     (config.inbox / "diary").mkdir(parents=True, exist_ok=True)

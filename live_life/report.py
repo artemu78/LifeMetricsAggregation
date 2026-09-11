@@ -28,6 +28,7 @@ RESCUETIME_PRODUCTIVITY_LABELS = {
 
 
 def default_report_day(config: Config) -> date:
+    """Return the latest completed logical day in the configured timezone."""
     from zoneinfo import ZoneInfo
 
     now = datetime.now(ZoneInfo(config.timezone))
@@ -36,12 +37,14 @@ def default_report_day(config: Config) -> date:
 
 
 def _format_number(value: float | None) -> str:
+    """Format one decimal place without trailing zeros, using a dash for missing values."""
     if value is None:
         return "—"
     return f"{value:.1f}".rstrip("0").rstrip(".")
 
 
 def generate_report(config: Config, day: date) -> Path:
+    """Write a logical-day Markdown summary without diary text and return its path."""
     start, end = logical_window(day, config)
     start_utc = start.astimezone(timezone.utc).isoformat()
     end_utc = end.astimezone(timezone.utc).isoformat()
@@ -81,7 +84,7 @@ def generate_report(config: Config, day: date) -> Path:
 
         lines.extend(["", "## Fitness tracker (Google Drive)", ""])
         steps = conn.execute(
-            f"""
+            """
             SELECT SUM(value_num) AS total FROM metric_events
             WHERE source = 'fitness_drive' AND metric = 'fitness_drive.steps'
                   AND occurred_at >= ? AND occurred_at < ?
@@ -89,7 +92,7 @@ def generate_report(config: Config, day: date) -> Path:
             (start_utc, end_utc),
         ).fetchone()["total"]
         heart_rate = conn.execute(
-            f"""
+            """
             SELECT AVG(value_num) AS avg_value, MIN(value_num) AS min_value,
                    MAX(value_num) AS max_value, COUNT(*) AS samples
             FROM metric_events
@@ -99,7 +102,7 @@ def generate_report(config: Config, day: date) -> Path:
             (start_utc, end_utc),
         ).fetchone()
         sleep = conn.execute(
-            f"""
+            """
             SELECT SUM(value_num) AS seconds FROM metric_events
             WHERE source = 'fitness_drive' AND metric LIKE 'fitness_drive.sleep.%_seconds'
                   AND occurred_at >= ? AND occurred_at < ?

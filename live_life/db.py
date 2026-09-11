@@ -66,6 +66,7 @@ CREATE TABLE IF NOT EXISTS import_files (
 
 @contextmanager
 def connect(path: Path):
+    """Initialize and yield a database connection, commit on success, and always close it."""
     path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(path)
     conn.row_factory = sqlite3.Row
@@ -79,6 +80,7 @@ def connect(path: Path):
 
 
 def utc_now() -> str:
+    """Return the current timezone-aware UTC timestamp in ISO format."""
     return datetime.now(timezone.utc).isoformat()
 
 
@@ -94,6 +96,7 @@ def insert_metric(
     unit: str | None,
     payload: object,
 ) -> bool:
+    """Insert a metric unless its source identity exists; return whether it was added."""
     cursor = conn.execute(
         """
         INSERT OR IGNORE INTO metric_events

@@ -35,6 +35,7 @@ from form_reports import (
 
 class PipelineTest(unittest.TestCase):
     def test_source_progress_resolves_after_saved_data_before_reports(self):
+        """Verify source progress resolves after saved data before reports."""
         self.config.reports.mkdir(exist_ok=True)
         (self.config.reports / "2026-09-01.md").write_text("old")
         (self.config.welltory_downloads / "WELLTORY_sample.csv").write_text("Date\n")
@@ -42,12 +43,15 @@ class PipelineTest(unittest.TestCase):
         sources = ["Fitness bracelet (Google Drive)", "Welltory", "Diary", "RescueTime", "Todoist"]
 
         def stage(name):
+            """Build a fake pipeline stage that records when it runs."""
             def run(*args):
+                """Record the fake stage invocation and return an empty result."""
                 events.append(name)
                 return {}
             return run
 
         def collect_todoist(config, day):
+            """Record collection and insert a synthetic task to exercise freshness updates."""
             events.append("todoist " + day.isoformat())
             with connect(config.database) as conn:
                 conn.execute(
@@ -59,9 +63,11 @@ class PipelineTest(unittest.TestCase):
             return {}
 
         def resolved(source, value):
+            """Capture a source completion notification in the event log."""
             events.append((source, value))
 
         def save_report(*args):
+            """Check that every source resolved before recording report generation."""
             self.assertEqual([e[0] for e in events if isinstance(e, tuple)], sources)
             events.append("report saved")
             return "report.md"
@@ -82,6 +88,7 @@ class PipelineTest(unittest.TestCase):
         self.assertEqual(events[-2:], ["report saved", "report saved"])
 
     def test_partial_summary_does_not_display_success_timestamp(self):
+        """Verify partial summary does not display success timestamp."""
         summary = {
             "reported_at": "2026-09-10T21:00:00+03:00",
             "sources": {"Todoist": "2026-09-09T18:00:00+03:00"},
@@ -92,10 +99,12 @@ class PipelineTest(unittest.TestCase):
                          "Data freshness — incomplete\n- Todoist: failed")
 
     def test_terminal_progress_is_visible_during_work_and_cleared_on_failure(self):
+        """Verify terminal progress is visible during work and cleared on failure."""
         stdout = StringIO()
         stdout.isatty = lambda: True
 
         def fail_during_work(*args, **kwargs):
+            """Check that progress is visible before simulating a collection failure."""
             self.assertIn("Data freshness — ⠋\n", stdout.getvalue())
             self.assertIn("- Diary: ⠋\n", stdout.getvalue())
             raise RuntimeError("collection failed")
@@ -108,12 +117,14 @@ class PipelineTest(unittest.TestCase):
         self.assertTrue(stdout.getvalue().endswith("\033[1A\r\033[2K" * 6))
 
     def test_terminal_progress_pauses_for_approval_and_resumes(self):
+        """Verify terminal progress pauses for approval and resumes."""
         stdout = StringIO()
         stdout.isatty = lambda: True
         with redirect_stdout(stdout):
             progress = FreshnessProgress()
 
             def approve(issues):
+                """Check that animation is paused while granting source approval."""
                 self.assertIsNone(progress.thread)
                 self.assertFalse(progress.visible)
                 return True
@@ -134,6 +145,7 @@ class PipelineTest(unittest.TestCase):
     def test_form_reports_recreates_latest_day_through_today(
         self, import_inbox_mock, import_welltory_mock, rescuetime_mock, todoist_mock
     ):
+        """Verify form reports recreates latest day through today."""
         self.config.reports.mkdir(exist_ok=True)
         (self.config.reports / "2026-08-30.md").write_text("old", encoding="utf-8")
         (self.config.reports / "2026-08-31.md").write_text("incomplete", encoding="utf-8")
@@ -174,6 +186,7 @@ class PipelineTest(unittest.TestCase):
         rescuetime_mock,
         todoist_mock,
     ):
+        """Verify form reports requires approval when sources are unavailable."""
         self.config.reports.mkdir(exist_ok=True)
         report = self.config.reports / "2026-09-01.md"
         report.write_text("unchanged", encoding="utf-8")
@@ -198,6 +211,7 @@ class PipelineTest(unittest.TestCase):
         rescuetime_mock,
         todoist_mock,
     ):
+        """Verify form reports continues after explicit approval."""
         self.config.reports.mkdir(exist_ok=True)
         report = self.config.reports / "2026-09-01.md"
         report.write_text("old", encoding="utf-8")
@@ -229,6 +243,7 @@ class PipelineTest(unittest.TestCase):
         rescuetime_mock,
         todoist_mock,
     ):
+        """Verify form reports does not request approval when sources are available."""
         self.config.reports.mkdir(exist_ok=True)
         (self.config.reports / "2026-09-01.md").write_text("old", encoding="utf-8")
         (self.config.welltory_downloads / "WELLTORY_sample.csv").write_text(
@@ -260,6 +275,7 @@ class PipelineTest(unittest.TestCase):
         rescuetime_mock,
         todoist_mock,
     ):
+        """Verify form reports requests approval for network failure and stops retrying source."""
         self.config.reports.mkdir(exist_ok=True)
         (self.config.reports / "2026-09-01.md").write_text("old", encoding="utf-8")
         (self.config.welltory_downloads / "WELLTORY_sample.csv").write_text(
@@ -295,6 +311,7 @@ class PipelineTest(unittest.TestCase):
         rescuetime_mock,
         todoist_mock,
     ):
+        """Verify form reports preserves report when human denies approval."""
         self.config.reports.mkdir(exist_ok=True)
         report = self.config.reports / "2026-09-01.md"
         report.write_text("unchanged", encoding="utf-8")
@@ -312,6 +329,7 @@ class PipelineTest(unittest.TestCase):
         self.assertEqual(report.read_text(encoding="utf-8"), "unchanged")
 
     def test_approval_prompt_requires_terminal_and_accepts_explicit_yes(self):
+        """Verify approval prompt requires terminal and accepts explicit yes."""
         stderr = StringIO()
         with patch("form_reports.sys.stdin.isatty", return_value=False):
             with redirect_stderr(stderr):
@@ -324,6 +342,7 @@ class PipelineTest(unittest.TestCase):
                     self.assertTrue(prompt_for_approval(["RescueTime is unavailable."]))
 
     def test_approval_prompt_rejects_interrupted_input(self):
+        """Verify approval prompt rejects interrupted input."""
         with patch("form_reports.sys.stdin.isatty", return_value=True):
             with patch("builtins.input", side_effect=EOFError):
                 with redirect_stderr(StringIO()):
@@ -334,6 +353,7 @@ class PipelineTest(unittest.TestCase):
     def test_form_reports_main_prints_result_and_returns_success(
         self, form_reports_mock, load_config_mock
     ):
+        """Verify form reports main prints result and returns success."""
         form_reports_mock.return_value = {
             "days": [],
             "data_freshness": {
@@ -353,6 +373,7 @@ class PipelineTest(unittest.TestCase):
         )
 
     def test_data_freshness_reports_latest_record_for_each_source(self):
+        """Verify data freshness reports latest record for each source."""
         with connect(self.config.database) as conn:
             insert_metric(
                 conn,
@@ -398,6 +419,7 @@ class PipelineTest(unittest.TestCase):
     def test_form_reports_main_returns_two_when_approval_is_not_granted(
         self, form_reports_mock, load_config_mock
     ):
+        """Verify form reports main returns two when approval is not granted."""
         stderr = StringIO()
         with redirect_stderr(stderr):
             exit_status = form_reports_main()
@@ -406,6 +428,7 @@ class PipelineTest(unittest.TestCase):
         self.assertIn("Todoist token is missing", stderr.getvalue())
 
     def test_date_range_is_inclusive(self):
+        """Verify date range is inclusive."""
         self.assertEqual(
             list(_date_range(date(2026, 8, 30), date(2026, 9, 1))),
             [date(2026, 8, 30), date(2026, 8, 31), date(2026, 9, 1)],
@@ -417,10 +440,12 @@ class PipelineTest(unittest.TestCase):
             list(inclusive_days(date(2026, 9, 2), date(2026, 9, 1)))
 
     def test_latest_report_day_explains_how_to_create_first_report(self):
+        """Verify latest report day explains how to create first report."""
         with self.assertRaisesRegex(RuntimeError, "create the first report"):
             latest_report_day(self.config.reports)
 
     def test_todoist_recovers_creation_time_from_completed_tasks(self):
+        """Verify todoist recovers creation time from completed tasks."""
         completed = {
             "items": [
                 {
@@ -444,6 +469,7 @@ class PipelineTest(unittest.TestCase):
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM created_tasks").fetchone()[0], 1)
 
     def setUp(self):
+        """Create isolated temporary paths and configuration for each test."""
         self.temp = TemporaryDirectory()
         root = Path(self.temp.name)
         self.config = Config(
@@ -462,9 +488,11 @@ class PipelineTest(unittest.TestCase):
         self.config.welltory_downloads.mkdir()
 
     def tearDown(self):
+        """Remove temporary test files and databases."""
         self.temp.cleanup()
 
     def write_sample(self) -> Path:
+        """Write a synthetic Welltory CSV fixture and return its path."""
         path = self.config.welltory_downloads / "WELLTORY_sample.csv"
         with path.open("w", newline="", encoding="utf-8") as handle:
             writer = csv.DictWriter(
@@ -481,6 +509,7 @@ class PipelineTest(unittest.TestCase):
         return path
 
     def test_import_is_idempotent_and_boundary_is_applied(self):
+        """Verify import is idempotent and boundary is applied."""
         path = self.write_sample()
         first = import_welltory(self.config, [path])
         second = import_welltory(self.config, [path])
@@ -497,6 +526,7 @@ class PipelineTest(unittest.TestCase):
         self.assertEqual(count, 6)
 
     def test_report_keeps_diary_content_private(self):
+        """Verify report keeps diary content private."""
         diary_dir = self.config.inbox / "diary"
         (diary_dir / "2026-07-17.md").write_text("private reflection", encoding="utf-8")
         import_inbox(self.config)
@@ -505,6 +535,7 @@ class PipelineTest(unittest.TestCase):
         self.assertNotIn("private reflection", report)
 
     def test_report_labels_rescuetime_productivity_levels(self):
+        """Verify report labels rescuetime productivity levels."""
         productivity_levels = {
             "-2": "Distracting",
             "-1": "Personal",
@@ -533,6 +564,7 @@ class PipelineTest(unittest.TestCase):
             self.assertNotIn(f"- {code}: 1.00 h", report)
 
     def test_retired_local_health_is_ignored_and_preserved(self):
+        """Verify retired local health is ignored and preserved."""
         health = self.config.inbox / "health"
         self.assertFalse(health.exists())
         health.mkdir()
@@ -558,6 +590,7 @@ class PipelineTest(unittest.TestCase):
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM metric_events").fetchone()[0], 3)
 
     def test_syncs_year_month_files_and_optional_day_folders(self):
+        """Verify syncs year month files and optional day folders."""
         cache = self.config.root / "data/inbox/fitness_drive"
         config = replace(
             self.config,
@@ -581,9 +614,11 @@ class PipelineTest(unittest.TestCase):
             }
 
             def list_children(self, folder_id):
+                """Return the synthetic folder contents without contacting Google Drive."""
                 return self.children.get(folder_id, [])
 
             def download(self, file_id, destination):
+                """Write the synthetic export document to the requested cache path."""
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 destination.write_text(json.dumps(document), encoding="utf-8")
 
@@ -594,6 +629,7 @@ class PipelineTest(unittest.TestCase):
         self.assertEqual(second["downloaded"], 0)
 
     def test_imports_drive_schema_and_ignores_retired_csv(self):
+        """Verify imports drive schema and ignores retired csv."""
         cache = self.config.root / "data/inbox/fitness_drive"
         cache.mkdir(parents=True)
         config = replace(self.config, fitness_drive_cache=cache)

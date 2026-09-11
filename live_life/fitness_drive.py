@@ -17,6 +17,7 @@ SAFE_NAME = re.compile(r"[^A-Za-z0-9._-]+")
 
 
 def _google_modules():
+    """Load Google client dependencies or raise an installation guidance error."""
     try:
         from google.auth.transport.requests import Request
         from google.oauth2.credentials import Credentials
@@ -50,6 +51,7 @@ def authorize_fitness_drive(config: Config) -> Path:
 
 class GoogleDriveReader:
     def __init__(self, config: Config):
+        """Load and refresh saved credentials, then initialize the read-only Drive client."""
         Request, Credentials, _, build, media_downloader = _google_modules()
         if not config.fitness_drive_token or not config.fitness_drive_token.exists():
             raise RuntimeError(
@@ -69,6 +71,7 @@ class GoogleDriveReader:
         self.media_downloader = media_downloader
 
     def list_children(self, folder_id: str) -> list[dict[str, str]]:
+        """Return metadata for all non-trashed children across every result page."""
         items: list[dict[str, str]] = []
         page_token = None
         while True:
@@ -91,6 +94,7 @@ class GoogleDriveReader:
                 return items
 
     def download(self, file_id: str, destination: Path) -> None:
+        """Download file contents in chunks to the destination path."""
         destination.parent.mkdir(parents=True, exist_ok=True)
         request = self.service.files().get_media(fileId=file_id)
         with FileIO(destination, "wb") as handle:
@@ -101,6 +105,7 @@ class GoogleDriveReader:
 
 
 def _requested_months(start: date, end: date) -> set[tuple[str, str]]:
+    """Return year-month pairs covering the range plus one day on either side."""
     current = start - timedelta(days=1)
     last = end + timedelta(days=1)
     months: set[tuple[str, str]] = set()
@@ -111,6 +116,7 @@ def _requested_months(start: date, end: date) -> set[tuple[str, str]]:
 
 
 def _walk_files(reader, folder_id: str) -> Iterable[dict[str, str]]:
+    """Recursively yield supported fitness export files beneath a Drive folder."""
     for item in reader.list_children(folder_id):
         if item.get("mimeType") == FOLDER_MIME_TYPE:
             yield from _walk_files(reader, item["id"])

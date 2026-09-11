@@ -9,6 +9,7 @@ from live_life.config import load_config
 
 class SourceConfigTest(TestCase):
     def test_portable_env_setup_and_shell_precedence(self):
+        """Verify portable env setup and shell precedence."""
         with TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             (root / 'config.toml').write_text(

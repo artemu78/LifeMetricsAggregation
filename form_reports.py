@@ -22,8 +22,9 @@ from live_life.report import generate_report
 
 
 REPORT_NAME = re.compile(r"^(\d{4}-\d{2}-\d{2})\.md$")
+FITNESS_DRIVE_LABEL = "Fitness bracelet (Google Drive)"
 FRESHNESS_SOURCES = (
-    "Fitness bracelet (Google Drive)", "Welltory", "RescueTime", "Todoist", "Diary"
+    FITNESS_DRIVE_LABEL, "Welltory", "RescueTime", "Todoist", "Diary"
 )
 
 
@@ -31,6 +32,7 @@ class FreshnessProgress:
     """Animate the terminal summary while collection and report generation run."""
 
     def __init__(self):
+        """Initialize terminal output, animation state, and synchronized source results."""
         self.stream = sys.stdout
         self.stopped = Event()
         self.thread: Thread | None = None
@@ -39,16 +41,19 @@ class FreshnessProgress:
         self.lock = Lock()
 
     def resolve(self, source: str, value: str):
+        """Store a completed source status for the next animation frame."""
         with self.lock:
             self.resolved[source] = value
 
     def _clear(self):
+        """Erase the previously rendered progress block if it is visible."""
         if self.visible:
             for _ in range(len(FRESHNESS_SOURCES) + 1):
                 self.stream.write("\033[1A\r\033[2K")
             self.visible = False
 
     def _render(self, spinner: str):
+        """Redraw source results, using the spinner for unresolved sources."""
         self._clear()
         lines = [f"Data freshness — {spinner}"]
         with self.lock:
@@ -61,6 +66,7 @@ class FreshnessProgress:
         self.visible = True
 
     def _animate(self):
+        """Advance spinner frames until the stop event is set."""
         frames = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
         frame = 1
         while not self.stopped.wait(0.1):
@@ -68,6 +74,7 @@ class FreshnessProgress:
             frame += 1
 
     def start(self):
+        """Start progress animation only when output is an interactive terminal."""
         if not self.stream.isatty():
             return
         self.stopped.clear()
@@ -76,6 +83,7 @@ class FreshnessProgress:
         self.thread.start()
 
     def stop(self):
+        """Stop the animation thread and clear its terminal output."""
         self.stopped.set()
         if self.thread is not None:
             self.thread.join()
@@ -84,6 +92,7 @@ class FreshnessProgress:
         self.stream.flush()
 
     def approve(self, issues: list[str]) -> bool:
+        """Pause progress for approval and resume only when approval is granted."""
         self.stop()
         approved = prompt_for_approval(issues)
         if approved:
@@ -95,6 +104,7 @@ class SourceApprovalRequired(RuntimeError):
     """Raised when reports would be generated from incomplete source updates."""
 
     def __init__(self, issues: list[str], *, denied: bool = False):
+        """Record source issues and distinguish required approval from denial."""
         heading = (
             "Update cancelled because approval was not granted."
             if denied
@@ -122,6 +132,7 @@ def _source_result(
 def _add_skip_issue(
     issues: list[str], result: dict[str, Any], flag: str, message: str
 ) -> None:
+    """Append a unique approval issue when a source skip flag is set."""
     if result.get(flag) and message not in issues:
         issues.append(message)
 
@@ -162,6 +173,7 @@ def latest_report_day(reports: Path) -> date:
 
 
 def inclusive_days(start: date, end: date):
+    """Yield dates through both endpoints, rejecting a reversed report range."""
     if start > end:
         raise RuntimeError(
             f"Latest report {start.isoformat()} is after today {end.isoformat()}."
@@ -173,6 +185,7 @@ def inclusive_days(start: date, end: date):
 
 
 def _local_timestamp(value: str | None, timezone_name: str) -> str | None:
+    """Convert an optional ISO timestamp to the configured local timezone."""
     if not value:
         return None
     parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
@@ -213,7 +226,7 @@ def data_freshness(config: Config, now: datetime | None = None) -> dict[str, obj
     return {
         "reported_at": current.isoformat(timespec="seconds"),
         "sources": {
-            "Fitness bracelet (Google Drive)": metric_latest.get("fitness_drive"),
+            FITNESS_DRIVE_LABEL: metric_latest.get("fitness_drive"),
             "Welltory": metric_latest.get("welltory"),
             "RescueTime": metric_latest.get("rescuetime"),
             "Todoist": _local_timestamp(todoist_latest, config.timezone),
@@ -223,6 +236,7 @@ def data_freshness(config: Config, now: datetime | None = None) -> dict[str, obj
 
 
 def display_timestamp(value: str | None) -> str:
+    """Format an ISO date or timestamp for display, or indicate missing records."""
     if not value:
         return "no records"
     if len(value) == 10:
@@ -259,6 +273,7 @@ def form_reports(
     source_status: dict[str, str] = {}
 
     def source_finished(source: str, *results: dict[str, Any], missing: bool = False):
+        """Record source availability and notify the caller with its status or freshness."""
         if any(result.get("error") for result in results):
             status = "failed"
         elif missing or any(
@@ -295,7 +310,7 @@ def form_reports(
         "Fitness bracelet cache import", lambda: import_fitness_drive(config), issues
     )
 
-    source_finished("Fitness bracelet (Google Drive)", drive_sync, drive_import)
+    source_finished(FITNESS_DRIVE_LABEL, drive_sync, drive_import)
 
     welltory_paths = sorted(config.welltory_downloads.glob(config.welltory_pattern))
     if not welltory_paths:
@@ -392,6 +407,7 @@ def form_reports(
 
 
 def main() -> int:
+    """Run report updates with terminal progress and return 2 if approval is missing."""
     root = Path(__file__).resolve().parent
     progress = FreshnessProgress()
     try:

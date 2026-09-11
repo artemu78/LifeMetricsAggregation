@@ -33,6 +33,7 @@ UNITS = {
 
 
 def _file_hash(path: Path) -> str:
+    """Compute a file SHA-256 digest in bounded chunks for import change detection."""
     digest = sha256()
     with path.open("rb") as handle:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
@@ -41,6 +42,7 @@ def _file_hash(path: Path) -> str:
 
 
 def _as_utc_iso(value: str, timezone_name: str) -> str:
+    """Normalize a timestamp to UTC, interpreting naive values in the supplied timezone."""
     parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=ZoneInfo(timezone_name))
@@ -48,6 +50,7 @@ def _as_utc_iso(value: str, timezone_name: str) -> str:
 
 
 def _number(value: str) -> float | None:
+    """Parse a number with an optional percent sign, returning None for nonnumeric values."""
     cleaned = value.strip().replace("%", "")
     if not cleaned:
         return None
@@ -58,6 +61,7 @@ def _number(value: str) -> float | None:
 
 
 def import_welltory(config: Config, paths: list[Path] | None = None) -> dict[str, int]:
+    """Import changed Welltory CSV files and return file, row, and new metric counts."""
     if paths is None:
         paths = sorted(config.welltory_downloads.glob(config.welltory_pattern))
     files = rows = metrics = 0
@@ -121,6 +125,7 @@ SLEEP_STAGES = {
 
 
 def _fitness_documents(path: Path) -> list[dict]:
+    """Read plain or gzipped JSON or NDJSON exports into header-and-record documents."""
     opener = gzip.open if path.name.endswith(".gz") else open
     with opener(path, "rt", encoding="utf-8-sig") as handle:
         content = handle.read()
@@ -138,12 +143,14 @@ def _fitness_documents(path: Path) -> list[dict]:
 
 
 def _duration_seconds(start: str, end: str) -> float:
+    """Return the signed elapsed seconds between two ISO timestamps."""
     start_time = datetime.fromisoformat(start.replace("Z", "+00:00"))
     end_time = datetime.fromisoformat(end.replace("Z", "+00:00"))
     return (end_time - start_time).total_seconds()
 
 
 def _fitness_metrics(record: dict) -> list[tuple[str, str, float, str]]:
+    """Convert a supported fitness record into timestamp, metric, value, and unit tuples."""
     record_type = record.get("recordType")
     start = record.get("startTime")
     if not start:
@@ -240,6 +247,7 @@ def import_fitness_drive(config: Config) -> dict[str, int]:
 
 
 def import_inbox(config: Config) -> dict[str, int]:
+    """Import dated local diary files only when no Google Doc diary is configured."""
     diary_entries = 0
     with connect(config.database) as conn:
         diary_paths = [] if config.diary_google_doc_id else sorted((config.inbox / "diary").glob("*.md"))
