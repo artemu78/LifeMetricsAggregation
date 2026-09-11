@@ -63,7 +63,7 @@ python -m pip install -e .
 python3 -m live_life authorize-fitness-drive
 ```
 
-The renewable OAuth token is stored in the ignored `data/google-drive-token.json`.
+The renewable OAuth token is stored in the ignored `private/google-drive-token.json`.
 Routine `run-daily`, `backfill`, and `form_reports.py` runs sync Drive automatically.
 
 ## Drop folders
@@ -149,7 +149,7 @@ not currently have the Google libraries. On a fresh installation, install them
 with `python3 -m pip install -e .` inside the activated environment.
 
 The diary reuses `private/google-drive-client-secret.json` and
-`data/google-drive-token.json`, configured through `GOOGLE_DRIVE_CLIENT_SECRET_FILE` and
+`private/google-drive-token.json`, configured through `GOOGLE_DRIVE_CLIENT_SECRET_FILE` and
 `GOOGLE_DRIVE_TOKEN_FILE` in `.env`. No additional
 API, credential file, document sharing, or OAuth scope is needed. If access is
 revoked, run `python3 -m live_life authorize-fitness-drive` in the activated
