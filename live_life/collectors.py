@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta, timezone
 from hashlib import sha256
+from time import monotonic
+from typing import Callable
+from urllib.error import HTTPError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
@@ -19,7 +22,7 @@ def logical_window(day: date, config: Config) -> tuple[datetime, datetime]:
     return start, start + timedelta(days=1)
 
 
-def _get_json(url: str, token: str) -> object:
+def _get_json(url: str, token: str, on_response: Callable[[], None] | None = None) -> object:
     """Fetch and decode JSON with bearer authentication and a 30-second timeout."""
     request = Request(
         url,
@@ -30,7 +33,58 @@ def _get_json(url: str, token: str) -> object:
         },
     )
     with urlopen(request, timeout=30) as response:
+        if on_response is not None:
+            on_response()
         return json.load(response)
+
+
+def _rescuetime_log(config: Config, event: str, **fields: object) -> None:
+    """Append allowlisted diagnostics, never credentials, URLs, or response contents."""
+    path = config.root / "data/logs/rescuetime.jsonl"
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+        with os.fdopen(fd, "a", encoding="utf-8") as handle:
+            handle.write(json.dumps({"timestamp": utc_now(), "event": event, **fields}) + "\n")
+    except OSError:
+        # Diagnostics must not turn a successful fetch/commit into a source failure.
+        import warnings
+        warnings.warn("Could not write RescueTime diagnostic log", RuntimeWarning, stacklevel=2)
+
+
+def _fetch_rescuetime(config: Config, url: str, token: str, day: date, taxonomy: str) -> dict:
+    """Identify the failing request stage without exposing private request data."""
+    context = {"day": day.isoformat(), "taxonomy": taxonomy}
+    stage = "connection_or_response"
+    started = monotonic()
+    _rescuetime_log(config, "request_started", **context, timeout_seconds=30)
+
+    def response_received() -> None:
+        nonlocal stage
+        stage = "decode_json"
+
+    try:
+        payload = _get_json(url, token, on_response=response_received)
+        stage = "validate_payload"
+        if not isinstance(payload, dict) or not isinstance(payload.get("row_headers"), list) or not isinstance(payload.get("rows"), list):
+            raise ValueError("Unexpected RescueTime response structure")
+    except Exception as exc:
+        reason = getattr(exc, "reason", exc)
+        status = exc.code if isinstance(exc, HTTPError) else None
+        elapsed = round(monotonic() - started, 3)
+        _rescuetime_log(config, "request_failed", **context, stage=stage,
+                       elapsed_seconds=elapsed, error_type=type(exc).__name__,
+                       reason_type=type(reason).__name__, http_status=status)
+        if isinstance(exc, HTTPError):
+            exc.close()
+        detail = f"HTTP {status}" if status is not None else type(reason).__name__
+        raise RuntimeError(
+            f"RescueTime {day} {taxonomy}: {stage} failed after {elapsed:.1f}s "
+            f"({detail}); diagnostics: {config.root / 'data/logs/rescuetime.jsonl'}"
+        ) from None
+    _rescuetime_log(config, "request_succeeded", **context,
+                   elapsed_seconds=round(monotonic() - started, 3))
+    return payload
 
 
 def collect_rescuetime(config: Config, day: date) -> dict[str, int]:
@@ -52,7 +106,7 @@ def collect_rescuetime(config: Config, day: date) -> dict[str, int]:
                     "format": "json",
                 }
             )
-            payload = _get_json(f"{config.rescuetime_api_url}?{params}", token)
+            payload = _fetch_rescuetime(config, f"{config.rescuetime_api_url}?{params}", token, day, taxonomy)
             queries += 1
             headers = payload.get("row_headers", [])
             for values in payload.get("rows", []):
@@ -106,6 +160,7 @@ def collect_rescuetime(config: Config, day: date) -> dict[str, int]:
                     payload=row,
                 ):
                     inserted += 1
+    _rescuetime_log(config, "collection_saved", day=day.isoformat(), queries=queries)
     return {"queries": queries, "events": inserted, "skipped_no_token": 0}
 
 

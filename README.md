@@ -25,6 +25,19 @@ under `data/reports/YYYY-MM-DD.md`.
 Copy `.env.example` to `.env` and configure your sources using the documented variables. Keep `.env` private.
 
 - RescueTime: create a personal API key in RescueTime's API Key Management page.
+
+RescueTime fetch diagnostics are appended to `data/logs/rescuetime.jsonl`
+(git-ignored, created with owner-only access). Each request records its logical
+date, taxonomy, start/end time, elapsed duration, and sanitized failure stage,
+error type, and HTTP status when available. Credentials, request URLs, and
+activity contents are never logged. `collection_saved` is written only after
+the day's database transaction commits. A `connection_or_response` timeout
+means no response was obtained; it can include DNS, TCP, TLS, or waiting for
+response headers. `decode_json` identifies response reading/JSON decoding;
+`validate_payload` identifies an unexpected response structure. The error
+shown by the report runner includes the log location. Logs append across runs;
+the file can be deleted when no longer needed. Fetch failures still require
+approval before partial reports are generated.
 - Todoist: Settings -> Integrations -> Developer -> API token.
 
 Then run:
