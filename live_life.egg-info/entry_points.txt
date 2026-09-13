@@ -1,2 +1,3 @@
 [console_scripts]
 live-life = live_life.cli:main
+live-life-dashboard = live_life.server:main

@@ -4,8 +4,18 @@ version = "0.1.0"
 description = "Local-first personal telemetry aggregation"
 requires-python = ">=3.11"
 dependencies = [
+    "fastapi>=0.116,<1",
     "google-api-python-client>=2.0",
     "google-auth-oauthlib>=1.0",
+    "pydantic>=2.11,<3",
+    "pyyaml>=6,<7",
+    "uvicorn>=0.35,<1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "datamodel-code-generator>=0.33,<1",
+    "httpx>=0.28,<1",
 ]
 
 [tool.setuptools]
@@ -13,3 +23,14 @@ packages = ["live_life"]
 
 [project.scripts]
 live-life = "live_life.cli:main"
+live-life-dashboard = "live_life.server:main"
+
+[tool.datamodel-codegen]
+input = "openapi.yaml"
+input-file-type = "openapi"
+output = "live_life/api_models.py"
+output-model-type = "pydantic_v2.BaseModel"
+target-python-version = "3.11"
+use-standard-collections = true
+use-union-operator = true
+disable-timestamp = true

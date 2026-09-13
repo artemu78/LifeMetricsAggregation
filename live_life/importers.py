@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -188,8 +188,26 @@ def _fitness_metrics(record: dict) -> list[tuple[str, str, float, str]]:
     return []
 
 
-def import_fitness_drive(config: Config) -> dict[str, int]:
-    """Import cached Reva Health Exporter schema-v1 JSON from Google Drive."""
+def _fitness_manifest(config: Config) -> dict[str, dict]:
+    """Return Drive metadata keyed by local cache filename."""
+    if not config.fitness_drive_cache:
+        return {}
+    try:
+        raw = json.loads(
+            (config.fitness_drive_cache / ".drive-index.json").read_text(encoding="utf-8")
+        )
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+    files = raw.get("files", {}) if raw.get("version") == 2 else {}
+    return {
+        entry["localName"]: {"remote_id": remote_id, **entry}
+        for remote_id, entry in files.items()
+        if isinstance(entry, dict) and entry.get("localName")
+    }
+
+
+def import_fitness_drive(config: Config) -> dict[str, object]:
+    """Atomically replace changed bracelet-file projections in the local database."""
     if not config.fitness_drive_cache:
         return {"files": 0, "records": 0, "metrics": 0, "skipped_not_configured": 1}
     paths = sorted(
@@ -197,53 +215,136 @@ def import_fitness_drive(config: Config) -> dict[str, int]:
         for path in config.fitness_drive_cache.iterdir()
         if path.is_file() and not path.name.startswith(".")
     )
-    files = records = metrics = 0
+    manifest = _fitness_manifest(config)
+    path_hashes = {path.resolve(): _file_hash(path) for path in paths}
     with connect(config.database) as conn:
-        for path in paths:
-            digest = _file_hash(path)
-            previous = conn.execute(
-                "SELECT sha256 FROM import_files WHERE path = ?", (str(path.resolve()),)
-            ).fetchone()
-            if previous and previous["sha256"] == digest:
-                continue
-            for document in _fitness_documents(path):
-                header = document.get("header", {})
-                if header.get("schemaVersion") != 1:
-                    raise ValueError(f"Unsupported fitness schema in {path}: {header.get('schemaVersion')}")
-                document_records = document.get("records", [])
-                if header.get("recordCount") != len(document_records):
-                    raise ValueError(f"Fitness record count mismatch: {path}")
-                for record in document_records:
-                    records += 1
-                    record_key = sha256(
-                        json.dumps(record, sort_keys=True).encode("utf-8")
-                    ).hexdigest()
-                    for index, (occurred_at, metric, value, unit) in enumerate(
-                        _fitness_metrics(record)
-                    ):
-                        if insert_metric(
-                            conn,
-                            source="fitness_drive",
-                            external_id=f"{record_key}:{index}",
-                            occurred_at=_as_utc_iso(occurred_at, config.timezone),
-                            metric=metric,
-                            value_num=value,
-                            value_text=None,
-                            unit=unit,
-                            payload=record,
-                        ):
-                            metrics += 1
+        previous_hashes = {
+            Path(row["path"]): row["sha256"]
+            for row in conn.execute(
+                "SELECT path, sha256 FROM import_files WHERE source = 'fitness_drive'"
+            )
+        }
+        legacy_rows = conn.execute(
+            """
+            SELECT COUNT(*) AS count FROM metric_events
+            WHERE source = 'fitness_drive' AND origin_file IS NULL
+            """
+        ).fetchone()["count"]
+
+    rebuild = legacy_rows > 0
+    selected = paths if rebuild else [
+        path for path in paths
+        if previous_hashes.get(path.resolve()) != path_hashes[path.resolve()]
+    ]
+
+    staged: dict[Path, list[tuple[str, str, str, float, str, dict]]] = {}
+    records = 0
+    affected_dates: set[str] = set()
+    local_tz = ZoneInfo(config.timezone)
+    for path in selected:
+        staged_rows: list[tuple[str, str, str, float, str, dict]] = []
+        file_meta = manifest.get(path.name, {})
+        remote_id = file_meta.get("remote_id") or path.name.split("--", 1)[0]
+        for document in _fitness_documents(path):
+            header = document.get("header", {})
+            if header.get("schemaVersion") != 1:
+                raise ValueError(
+                    f"Unsupported fitness schema in {path.name}: {header.get('schemaVersion')}"
+                )
+            document_records = document.get("records", [])
+            if header.get("recordCount") != len(document_records):
+                raise ValueError(f"Fitness record count mismatch: {path.name}")
+            for record in document_records:
+                records += 1
+                record_key = sha256(
+                    json.dumps(record, sort_keys=True).encode("utf-8")
+                ).hexdigest()
+                for index, (occurred_at, metric, value, unit) in enumerate(
+                    _fitness_metrics(record)
+                ):
+                    normalized = _as_utc_iso(occurred_at, config.timezone)
+                    logical_date = (
+                        datetime.fromisoformat(normalized).astimezone(local_tz)
+                        - timedelta(hours=config.day_boundary_hour)
+                    ).date().isoformat()
+                    affected_dates.add(logical_date)
+                    staged_rows.append(
+                        (f"{remote_id}:{record_key}:{index}", normalized, metric, value, unit, record)
+                    )
+        staged[path.resolve()] = staged_rows
+
+    files = metrics = 0
+    with connect(config.database) as conn:
+        if rebuild:
+            conn.execute("DELETE FROM metric_events WHERE source = 'fitness_drive'")
+        for path, rows in staged.items():
+            if not rebuild:
+                conn.execute(
+                    "DELETE FROM metric_events WHERE source = 'fitness_drive' AND origin_file = ?",
+                    (str(path),),
+                )
+            for external_id, occurred_at, metric, value, unit, record in rows:
+                if insert_metric(
+                    conn,
+                    source="fitness_drive",
+                    external_id=external_id,
+                    occurred_at=occurred_at,
+                    metric=metric,
+                    value_num=value,
+                    value_text=None,
+                    unit=unit,
+                    payload=record,
+                    origin_file=str(path),
+                ):
+                    metrics += 1
+            file_meta = manifest.get(path.name, {})
             conn.execute(
                 """
-                INSERT INTO import_files(path, sha256, source, imported_at)
-                VALUES (?, ?, 'fitness_drive', ?)
-                ON CONFLICT(path) DO UPDATE SET sha256=excluded.sha256,
-                    source=excluded.source, imported_at=excluded.imported_at
+                INSERT INTO import_files
+                    (path, sha256, source, imported_at, remote_id, remote_name,
+                     remote_modified_at, remote_status, last_seen_at)
+                VALUES (?, ?, 'fitness_drive', ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(path) DO UPDATE SET
+                    sha256=excluded.sha256,
+                    source=excluded.source,
+                    imported_at=excluded.imported_at,
+                    remote_id=excluded.remote_id,
+                    remote_name=excluded.remote_name,
+                    remote_modified_at=excluded.remote_modified_at,
+                    remote_status=excluded.remote_status,
+                    last_seen_at=excluded.last_seen_at
                 """,
-                (str(path.resolve()), digest, utc_now()),
+                (
+                    str(path),
+                    path_hashes[path],
+                    utc_now(),
+                    file_meta.get("remote_id") or path.name.split("--", 1)[0],
+                    file_meta.get("name") or path.name,
+                    file_meta.get("modifiedTime"),
+                    file_meta.get("status", "available"),
+                    file_meta.get("lastSeenAt"),
+                ),
             )
             files += 1
-    return {"files": files, "records": records, "metrics": metrics}
+        for local_name, file_meta in manifest.items():
+            conn.execute(
+                """
+                UPDATE import_files SET remote_status = ?, last_seen_at = ?
+                WHERE path = ? AND source = 'fitness_drive'
+                """,
+                (
+                    file_meta.get("status", "available"),
+                    file_meta.get("lastSeenAt"),
+                    str((config.fitness_drive_cache / local_name).resolve()),
+                ),
+            )
+    return {
+        "files": files,
+        "records": records,
+        "metrics": metrics,
+        "rebuild": rebuild,
+        "affected_dates": sorted(affected_dates),
+    }
 
 
 def import_inbox(config: Config) -> dict[str, int]:

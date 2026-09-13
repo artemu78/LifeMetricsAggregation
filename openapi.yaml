@@ -1,0 +1,322 @@
+openapi: 3.1.1
+info:
+  title: Live Life Local Dashboard API
+  version: 1.0.0
+  description: Local-only API for personal telemetry visualization and bracelet synchronization.
+servers:
+  - url: http://127.0.0.1:8000
+paths:
+  /api/dashboard:
+    get:
+      operationId: getDashboard
+      summary: Read dashboard data for an inclusive date range
+      parameters:
+        - $ref: '#/components/parameters/FromDate'
+        - $ref: '#/components/parameters/ToDate'
+      responses:
+        '200':
+          description: Dashboard data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/fitness-sync:
+    post:
+      operationId: syncFitness
+      summary: Atomically synchronize bracelet exports from Google Drive
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DateRange'
+      responses:
+        '200':
+          description: Synchronization completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FitnessSyncResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          description: Another bracelet synchronization is running
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+components:
+  parameters:
+    FromDate:
+      name: from
+      in: query
+      required: true
+      schema:
+        type: string
+        format: date
+    ToDate:
+      name: to
+      in: query
+      required: true
+      schema:
+        type: string
+        format: date
+  responses:
+    BadRequest:
+      description: Invalid input
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    InternalError:
+      description: The local operation failed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+  schemas:
+    DateRange:
+      type: object
+      additionalProperties: false
+      required: [from, to]
+      properties:
+        from:
+          type: string
+          format: date
+        to:
+          type: string
+          format: date
+    SourceName:
+      type: string
+      enum: [bracelet, welltory, todoist, rescuetime]
+    SourceRunStatus:
+      type: string
+      enum: [success, partial, failed, not_run]
+    QualityStatus:
+      type: string
+      enum: [complete, partial, failed, not_run, in_progress]
+    SourceStatus:
+      type: object
+      additionalProperties: false
+      required: [source, status]
+      properties:
+        source:
+          $ref: '#/components/schemas/SourceName'
+        status:
+          $ref: '#/components/schemas/SourceRunStatus'
+        lastRunAt:
+          type: [string, 'null']
+          format: date-time
+    MetricPoint:
+      type: object
+      additionalProperties: false
+      required: [timestamp, metric, value]
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+        metric:
+          type: string
+        value:
+          type: number
+        unit:
+          type: [string, 'null']
+    TaskItem:
+      type: object
+      additionalProperties: false
+      required: [content, timestamp]
+      properties:
+        content:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+    RescueTimeItem:
+      type: object
+      additionalProperties: false
+      required: [perspective, label, seconds]
+      properties:
+        perspective:
+          type: string
+          enum: [activity, productivity]
+        label:
+          type: string
+        seconds:
+          type: number
+          minimum: 0
+    BraceletSummary:
+      type: object
+      additionalProperties: false
+      required: [sleepSeconds, steps]
+      properties:
+        sleepSeconds:
+          type: [number, 'null']
+        steps:
+          type: [number, 'null']
+    TodoistSummary:
+      type: object
+      additionalProperties: false
+      required: [created, completed]
+      properties:
+        created:
+          type: integer
+          minimum: 0
+        completed:
+          type: integer
+          minimum: 0
+    SourceIndicator:
+      type: object
+      additionalProperties: false
+      required: [available, count]
+      properties:
+        available:
+          type: boolean
+        count:
+          type: integer
+          minimum: 0
+    DayDetail:
+      type: object
+      additionalProperties: false
+      required: [braceletMetrics, welltoryMetrics, createdTasks, completedTasks, rescueTime]
+      properties:
+        braceletMetrics:
+          type: array
+          items:
+            $ref: '#/components/schemas/MetricPoint'
+        welltoryMetrics:
+          type: array
+          items:
+            $ref: '#/components/schemas/MetricPoint'
+        createdTasks:
+          type: array
+          items:
+            $ref: '#/components/schemas/TaskItem'
+        completedTasks:
+          type: array
+          items:
+            $ref: '#/components/schemas/TaskItem'
+        rescueTime:
+          type: array
+          items:
+            $ref: '#/components/schemas/RescueTimeItem'
+    DashboardDay:
+      type: object
+      additionalProperties: false
+      required:
+        - date
+        - weekday
+        - currentDay
+        - quality
+        - sources
+        - bracelet
+        - welltory
+        - todoist
+        - rescuetime
+        - detail
+      properties:
+        date:
+          type: string
+          format: date
+        weekday:
+          type: integer
+          minimum: 1
+          maximum: 7
+        currentDay:
+          type: boolean
+        quality:
+          $ref: '#/components/schemas/QualityStatus'
+        sources:
+          type: array
+          items:
+            $ref: '#/components/schemas/SourceStatus'
+        bracelet:
+          $ref: '#/components/schemas/BraceletSummary'
+        welltory:
+          $ref: '#/components/schemas/SourceIndicator'
+        todoist:
+          $ref: '#/components/schemas/TodoistSummary'
+        rescuetime:
+          $ref: '#/components/schemas/SourceIndicator'
+        detail:
+          $ref: '#/components/schemas/DayDetail'
+    DashboardResponse:
+      type: object
+      additionalProperties: false
+      required: [from, to, timezone, generatedAt, days]
+      properties:
+        from:
+          type: string
+          format: date
+        to:
+          type: string
+          format: date
+        timezone:
+          type: string
+        generatedAt:
+          type: string
+          format: date-time
+        days:
+          type: array
+          items:
+            $ref: '#/components/schemas/DashboardDay'
+    FitnessSyncResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - from
+        - to
+        - filesFound
+        - downloaded
+        - changedFiles
+        - missingFiles
+        - records
+        - metrics
+        - affectedDates
+      properties:
+        from:
+          type: string
+          format: date
+        to:
+          type: string
+          format: date
+        filesFound:
+          type: integer
+          minimum: 0
+        downloaded:
+          type: integer
+          minimum: 0
+        changedFiles:
+          type: integer
+          minimum: 0
+        missingFiles:
+          type: integer
+          minimum: 0
+        records:
+          type: integer
+          minimum: 0
+        metrics:
+          type: integer
+          minimum: 0
+        affectedDates:
+          type: array
+          items:
+            type: string
+            format: date
+    ApiError:
+      type: object
+      additionalProperties: false
+      required: [code, message, details]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        details:
+          type: object
+          additionalProperties: true

@@ -3,5 +3,12 @@ Name: live-life
 Version: 0.1.0
 Summary: Local-first personal telemetry aggregation
 Requires-Python: >=3.11
+Requires-Dist: fastapi<1,>=0.116
 Requires-Dist: google-api-python-client>=2.0
 Requires-Dist: google-auth-oauthlib>=1.0
+Requires-Dist: pydantic<3,>=2.11
+Requires-Dist: pyyaml<7,>=6
+Requires-Dist: uvicorn<1,>=0.35
+Provides-Extra: dev
+Requires-Dist: datamodel-code-generator<1,>=0.33; extra == "dev"
+Requires-Dist: httpx<1,>=0.28; extra == "dev"

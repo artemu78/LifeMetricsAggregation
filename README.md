@@ -141,6 +141,41 @@ stops with exit status 2 instead of waiting for input.
 
 This is a self-observation tool, not a medical diagnosis system.
 
+## Local dashboard
+
+The private dashboard shows the 30 Moscow dates ending today in a calendar.
+It reads Bracelet, Welltory, Todoist, and RescueTime data from the local
+database. Diary content is never selected by the dashboard API. The server
+binds only to `127.0.0.1`.
+
+Build and start it:
+
+```bash
+source .venv/bin/activate
+npm install
+npm run build
+live-life-dashboard
+```
+
+Open `http://127.0.0.1:8000`. The **Update bracelet data** action synchronizes
+only Google Drive bracelet exports for the displayed range. Dashboard reads do
+not update the database.
+
+`openapi.yaml` is the sole API contract. Regenerate the checked-in Python and
+TypeScript types after changing it:
+
+```bash
+datamodel-codegen
+npm run generate:types
+```
+
+The API starts the JSON workers as separate processes:
+
+- `python -m live_life.dashboard_json --from YYYY-MM-DD --to YYYY-MM-DD`
+- `python -m live_life.fitness_sync_json --from YYYY-MM-DD --to YYYY-MM-DD`
+
+Successful worker output is one JSON document on stdout; diagnostics use stderr.
+
 ## Diary directly from Google Docs
 
 `form_reports.py` now fetches the configured document on every run through the
