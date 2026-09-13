@@ -73,6 +73,8 @@ export interface components {
             timestamp: string;
         };
         RescueTimeItem: {
+            /** Format: date-time */
+            timestamp: string;
             /** @enum {string} */
             perspective: "activity" | "productivity";
             label: string;

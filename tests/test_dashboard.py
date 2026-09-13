@@ -170,6 +170,10 @@ class DashboardTest(unittest.TestCase):
         encoded = json.dumps(result)
         self.assertIn("Visible task", encoded)
         self.assertIn("Editor", encoded)
+        self.assertEqual(
+            result["days"][0]["detail"]["rescueTime"][0]["timestamp"],
+            "2026-09-10T09:00:00+00:00",
+        )
         self.assertNotIn("DIARY-MUST-NOT-LEAK", encoded)
         self.assertNotIn("rawSecret", encoded)
         self.assertNotIn("/private/path", encoded)

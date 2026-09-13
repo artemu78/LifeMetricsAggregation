@@ -123,6 +123,7 @@ def build_dashboard(config: Config, start: date, end: date) -> dict:
             if len(parts) == 4 and parts[2] in {"activity", "productivity"}:
                 rescue_rows.append(
                     {
+                        "timestamp": point["timestamp"],
                         "perspective": parts[2],
                         "label": parts[3],
                         "seconds": point["value"],

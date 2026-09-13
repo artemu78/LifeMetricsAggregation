@@ -26,14 +26,22 @@ import {
   useParams,
 } from 'react-router'
 import {
+  Cell,
   CartesianGrid,
   Line,
   LineChart,
+  Pie,
+  PieChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from 'recharts'
+import {
+  buildRescueTimeOverview,
+  formatRecordTime,
+  PRODUCTIVITY_LABELS,
+} from './dayDetail'
 import { inclusiveDateCount } from './dashboardWindow'
 import { dashboardStore as store, type DashboardDay, type DashboardResponse } from './store'
 
@@ -56,9 +64,30 @@ const SOURCE_ICONS = [
   { name: 'Todoist', description: 'Созданные и завершённые задачи', Icon: ListTodo },
   { name: 'RescueTime', description: 'Активность и продуктивность', Icon: ChartNoAxesCombined },
 ]
+const ACTIVITY_COLORS = ['#68a9c9', '#4c7f6d', '#d7a742', '#8f78b5', '#cf7c5c', '#789087']
+const PRODUCTIVITY_COLORS: Record<string, string> = {
+  '-2': '#cf5c4f',
+  '-1': '#db8b51',
+  '0': '#a7b3ae',
+  '1': '#75b7d5',
+  '2': '#4d82d8',
+}
 
 function hours(seconds: number | null) {
   return seconds == null ? '—' : `${(seconds / 3600).toFixed(1)} ч`
+}
+
+function duration(seconds: number) {
+  const minutes = Math.round(seconds / 60)
+  if (minutes < 1) return '< 1 мин'
+  const wholeHours = Math.floor(minutes / 60)
+  const remainingMinutes = minutes % 60
+  if (!wholeHours) return `${remainingMinutes} мин`
+  return remainingMinutes ? `${wholeHours} ч ${remainingMinutes} мин` : `${wholeHours} ч`
+}
+
+function RecordTime({ timestamp, timezone }: { timestamp: string; timezone: string }) {
+  return <time dateTime={timestamp}>{formatRecordTime(timestamp, timezone)}</time>
 }
 
 function monthLabel(date: string) {
@@ -252,8 +281,10 @@ function DayModal({ day, timezone }: {
     }
   }, [navigate, previousDate, nextDate])
   const sleep = day.detail.braceletMetrics.filter((point) => point.metric.startsWith('fitness_drive.sleep.'))
-  const rescueActivity = day.detail.rescueTime.filter((item) => item.perspective === 'activity')
-  const rescueProductivity = day.detail.rescueTime.filter((item) => item.perspective === 'productivity')
+  const rescueOverview = buildRescueTimeOverview(day.detail.rescueTime)
+  const rescueIntervals = [...rescueOverview.activityRecords].sort(
+    (left, right) => left.timestamp.localeCompare(right.timestamp),
+  )
   return (
     <div className="modal-backdrop" onMouseDown={close}>
       <article
@@ -307,7 +338,10 @@ function DayModal({ day, timezone }: {
             <div className="sleep-stages">
               {sleep.map((point, index) => (
                 <div key={index}>
-                  <span>{point.metric.replace('fitness_drive.sleep.', '').replace('_seconds', '')}</span>
+                  <span>
+                    <RecordTime timestamp={point.timestamp} timezone={timezone} />
+                    {point.metric.replace('fitness_drive.sleep.', '').replace('_seconds', '')}
+                  </span>
                   <b>{hours(point.value)}</b>
                 </div>
               ))}
@@ -319,7 +353,10 @@ function DayModal({ day, timezone }: {
             <div className="measurement-grid">
               {day.detail.welltoryMetrics.map((point, index) => (
                 <div key={index}>
-                  <span>{point.metric.replace('welltory.', '')}</span>
+                  <span>
+                    <RecordTime timestamp={point.timestamp} timezone={timezone} />
+                    {point.metric.replace('welltory.', '')}
+                  </span>
                   <b>{point.value.toFixed(1)} {point.unit ?? ''}</b>
                 </div>
               ))}
@@ -333,22 +370,126 @@ function DayModal({ day, timezone }: {
           <MetricChart day={day} metric="fitness_drive.oxygen_saturation" color="#3388a4" title="Кислород" timezone={timezone} />
         </div>
 
-        <div className="detail-grid">
+        <div className="activity-detail-grid">
           <section className="panel">
             <h3>Todoist</h3>
             <h4>Созданные</h4>
-            <ul>{day.detail.createdTasks.map((task, i) => <li key={i}>{task.content}</li>)}</ul>
+            <ul className="record-list">
+              {day.detail.createdTasks.map((task, i) => (
+                <li key={i}><RecordTime timestamp={task.timestamp} timezone={timezone} /><span>{task.content}</span></li>
+              ))}
+            </ul>
             <h4>Завершённые</h4>
-            <ul>{day.detail.completedTasks.map((task, i) => <li key={i}>{task.content}</li>)}</ul>
+            <ul className="record-list">
+              {day.detail.completedTasks.map((task, i) => (
+                <li key={i}><RecordTime timestamp={task.timestamp} timezone={timezone} /><span>{task.content}</span></li>
+              ))}
+            </ul>
             {!day.detail.createdTasks.length && !day.detail.completedTasks.length && <p className="muted">Нет задач</p>}
           </section>
 
-          <section className="panel">
-            <h3>RescueTime</h3>
-            <h4>Активность</h4>
-            <ul>{rescueActivity.map((item, i) => <li key={i}>{item.label}: {hours(item.seconds)}</li>)}</ul>
-            <h4>Продуктивность</h4>
-            <ul>{rescueProductivity.map((item, i) => <li key={i}>{item.label}: {hours(item.seconds)}</li>)}</ul>
+          <section className="panel rescuetime-panel">
+            <div className="panel-heading">
+              <div>
+                <h3>RescueTime</h3>
+                <p className="muted">Обзор отслеженного времени</p>
+              </div>
+              <div className="tracked-total">
+                <span>Всего отслежено</span>
+                <strong>{duration(rescueOverview.totalTrackedSeconds)}</strong>
+              </div>
+            </div>
+
+            {rescueOverview.totalTrackedSeconds > 0 ? (
+              <div className="rescuetime-overview">
+                <div className="productivity-summary">
+                  <h4>Индекс продуктивности</h4>
+                  {rescueOverview.productivityIndex == null ? (
+                    <p className="muted">Нет данных продуктивности</p>
+                  ) : (
+                    <>
+                      <div
+                        className="productivity-chart"
+                        role="img"
+                        aria-label={`Индекс продуктивности: ${rescueOverview.productivityIndex} из 100`}
+                      >
+                        <ResponsiveContainer width="100%" height={220}>
+                          <PieChart>
+                            <Pie
+                              data={rescueOverview.productivity}
+                              dataKey="seconds"
+                              nameKey="name"
+                              innerRadius={68}
+                              outerRadius={96}
+                              stroke="none"
+                            >
+                              {rescueOverview.productivity.map((level) => (
+                                <Cell
+                                  key={level.label}
+                                  fill={PRODUCTIVITY_COLORS[level.label] ?? '#789087'}
+                                />
+                              ))}
+                            </Pie>
+                            <Tooltip formatter={(value) => duration(Number(value))} />
+                          </PieChart>
+                        </ResponsiveContainer>
+                        <div className="productivity-chart-value">
+                          <strong>{rescueOverview.productivityIndex}</strong>
+                          <span>из 100</span>
+                        </div>
+                      </div>
+                      <ul className="productivity-legend">
+                        {rescueOverview.productivity.map((level) => (
+                          <li key={level.label}>
+                            <i style={{ background: PRODUCTIVITY_COLORS[level.label] ?? '#789087' }} />
+                            <span>{PRODUCTIVITY_LABELS[level.label] ?? level.name}</span>
+                            <b>{duration(level.seconds)}</b>
+                          </li>
+                        ))}
+                      </ul>
+                    </>
+                  )}
+                  <p className="note">Локальный расчёт по уровням RescueTime от −2 до 2.</p>
+                </div>
+
+                <div className="activity-ranking">
+                  <h4>Основные активности</h4>
+                  {rescueOverview.categories.slice(0, 6).map((category, index) => (
+                    <div className="activity-rank" key={category.label}>
+                      <div>
+                        <span><b>{Math.round(category.percentage)}%</b> {category.label}</span>
+                        <time>{duration(category.seconds)}</time>
+                      </div>
+                      <i aria-hidden="true">
+                        <span
+                          style={{
+                            width: `${category.percentage}%`,
+                            background: ACTIVITY_COLORS[index % ACTIVITY_COLORS.length],
+                          }}
+                        />
+                      </i>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <p className="muted">Нет отслеженного времени</p>
+            )}
+
+            {rescueIntervals.length > 0 && (
+              <div className="rescuetime-intervals">
+                <h4>Интервалы активности</h4>
+                <ul className="record-list scrollable-records">
+                  {rescueIntervals.map((item, index) => (
+                    <li key={`${item.timestamp}-${item.label}-${index}`}>
+                      <RecordTime timestamp={item.timestamp} timezone={timezone} />
+                      <span>{item.label}</span>
+                      <b>{duration(item.seconds)}</b>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
             <p className="note">Активность и продуктивность — разные классификации одного времени и не складываются.</p>
           </section>
         </div>

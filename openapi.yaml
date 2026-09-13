@@ -140,8 +140,11 @@ components:
     RescueTimeItem:
       type: object
       additionalProperties: false
-      required: [perspective, label, seconds]
+      required: [timestamp, perspective, label, seconds]
       properties:
+        timestamp:
+          type: string
+          format: date-time
         perspective:
           type: string
           enum: [activity, productivity]
