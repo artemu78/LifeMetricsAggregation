@@ -105,6 +105,12 @@ function DayModal({ day, timezone }: {
   timezone: DashboardResponse['timezone']
 }) {
   const modalRef = useRef<HTMLElement>(null)
+  const days = store.dashboard?.days ?? []
+  const selectedIndex = days.findIndex((item) => item.date === day.date)
+  const previousDate = selectedIndex > 0 ? days[selectedIndex - 1].date : null
+  const nextDate = selectedIndex >= 0 && selectedIndex < days.length - 1
+    ? days[selectedIndex + 1].date
+    : null
   useEffect(() => {
     const previousOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
@@ -112,6 +118,14 @@ function DayModal({ day, timezone }: {
     const handleKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         store.selectDay(null)
+        return
+      }
+      if (event.key === 'ArrowLeft' && previousDate) {
+        store.selectDay(previousDate)
+        return
+      }
+      if (event.key === 'ArrowRight' && nextDate) {
+        store.selectDay(nextDate)
         return
       }
       if (event.key !== 'Tab' || !modalRef.current) return
@@ -139,7 +153,7 @@ function DayModal({ day, timezone }: {
       document.body.style.overflow = previousOverflow
       window.removeEventListener('keydown', handleKey)
     }
-  }, [])
+  }, [previousDate, nextDate])
   const sleep = day.detail.braceletMetrics.filter((point) => point.metric.startsWith('fitness_drive.sleep.'))
   const rescueActivity = day.detail.rescueTime.filter((item) => item.perspective === 'activity')
   const rescueProductivity = day.detail.rescueTime.filter((item) => item.perspective === 'productivity')
@@ -155,9 +169,25 @@ function DayModal({ day, timezone }: {
         onMouseDown={(event) => event.stopPropagation()}
       >
         <header>
-          <div>
+          <div className="day-heading">
             <p className="eyebrow">Подробности дня</p>
             <h2 id="day-title">{day.date}</h2>
+            <nav className="day-navigation" aria-label="Навигация по датам">
+              <button
+                className="date-navigation-button"
+                onClick={() => previousDate && store.selectDay(previousDate)}
+                disabled={!previousDate}
+              >
+                <span aria-hidden="true">←</span> Предыдущая дата
+              </button>
+              <button
+                className="date-navigation-button"
+                onClick={() => nextDate && store.selectDay(nextDate)}
+                disabled={!nextDate}
+              >
+                Следующая дата <span aria-hidden="true">→</span>
+              </button>
+            </nav>
           </div>
           <button className="icon-button" onClick={() => store.selectDay(null)} aria-label="Закрыть">×</button>
         </header>

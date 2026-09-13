@@ -144,8 +144,22 @@ h1 { margin-bottom: 4px; font-size: clamp(2rem, 4vw, 3.5rem); letter-spacing: -0
   box-shadow: 0 35px 100px rgba(9, 32, 24, .35);
 }
 .modal > header { display: flex; justify-content: space-between; align-items: flex-start; }
-.modal h2 { font-size: clamp(2rem, 4vw, 3rem); }
+.modal h2 { margin-bottom: 14px; font-size: clamp(2rem, 4vw, 3rem); }
 .icon-button { font-size: 2rem; line-height: 1; }
+.day-heading { min-width: 0; }
+.day-navigation { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
+.date-navigation-button {
+  padding: 9px 13px;
+  border: 1px solid #cbdad3;
+  border-radius: 11px;
+  background: rgba(255, 255, 255, .82);
+  color: #245c4b;
+  font-weight: 750;
+  cursor: pointer;
+}
+.date-navigation-button:hover:not(:disabled) { background: white; border-color: #7ea593; }
+.date-navigation-button:focus-visible { outline: 3px solid rgba(36, 92, 75, .25); outline-offset: 2px; }
+.date-navigation-button:disabled { color: #9aa9a3; cursor: not-allowed; opacity: .6; }
 .source-statuses { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 22px; }
 .source-statuses span { padding: 6px 10px; border-radius: 20px; background: #e5ece8; font-size: .75rem; font-weight: 700; }
 .source-success { color: #2b704e; }
