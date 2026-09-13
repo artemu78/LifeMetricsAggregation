@@ -274,10 +274,17 @@ function DayModal({ day, timezone }: {
         first.focus()
       }
     }
+    const handlePointerDown = (event: PointerEvent) => {
+      if (modalRef.current && !modalRef.current.contains(event.target as Node)) {
+        close()
+      }
+    }
     window.addEventListener('keydown', handleKey)
+    document.addEventListener('pointerdown', handlePointerDown)
     return () => {
       document.body.style.overflow = previousOverflow
       window.removeEventListener('keydown', handleKey)
+      document.removeEventListener('pointerdown', handlePointerDown)
     }
   }, [navigate, previousDate, nextDate])
   const sleep = day.detail.braceletMetrics.filter((point) => point.metric.startsWith('fitness_drive.sleep.'))
@@ -286,7 +293,7 @@ function DayModal({ day, timezone }: {
     (left, right) => left.timestamp.localeCompare(right.timestamp),
   )
   return (
-    <div className="modal-backdrop" onMouseDown={close}>
+    <div className="modal-backdrop">
       <article
         ref={modalRef}
         className="modal"
@@ -294,7 +301,6 @@ function DayModal({ day, timezone }: {
         aria-modal="true"
         aria-labelledby="day-title"
         tabIndex={-1}
-        onMouseDown={(event) => event.stopPropagation()}
       >
         <header>
           <div className="day-heading">
@@ -336,8 +342,8 @@ function DayModal({ day, timezone }: {
               <p><span>Шаги</span><b>{day.bracelet.steps?.toLocaleString('ru-RU') ?? '—'}</b></p>
             </div>
             <div className="sleep-stages">
-              {sleep.map((point, index) => (
-                <div key={index}>
+              {sleep.map((point) => (
+                <div key={`${point.timestamp}-${point.metric}`}>
                   <span>
                     <RecordTime timestamp={point.timestamp} timezone={timezone} />
                     {point.metric.replace('fitness_drive.sleep.', '').replace('_seconds', '')}
@@ -351,8 +357,8 @@ function DayModal({ day, timezone }: {
           <section className="panel">
             <h3>Welltory</h3>
             <div className="measurement-grid">
-              {day.detail.welltoryMetrics.map((point, index) => (
-                <div key={index}>
+              {day.detail.welltoryMetrics.map((point) => (
+                <div key={`${point.timestamp}-${point.metric}`}>
                   <span>
                     <RecordTime timestamp={point.timestamp} timezone={timezone} />
                     {point.metric.replace('welltory.', '')}
@@ -375,14 +381,14 @@ function DayModal({ day, timezone }: {
             <h3>Todoist</h3>
             <h4>Созданные</h4>
             <ul className="record-list">
-              {day.detail.createdTasks.map((task, i) => (
-                <li key={i}><RecordTime timestamp={task.timestamp} timezone={timezone} /><span>{task.content}</span></li>
+              {day.detail.createdTasks.map((task) => (
+                <li key={`${task.timestamp}-${task.content}`}><RecordTime timestamp={task.timestamp} timezone={timezone} /><span>{task.content}</span></li>
               ))}
             </ul>
             <h4>Завершённые</h4>
             <ul className="record-list">
-              {day.detail.completedTasks.map((task, i) => (
-                <li key={i}><RecordTime timestamp={task.timestamp} timezone={timezone} /><span>{task.content}</span></li>
+              {day.detail.completedTasks.map((task) => (
+                <li key={`${task.timestamp}-${task.content}`}><RecordTime timestamp={task.timestamp} timezone={timezone} /><span>{task.content}</span></li>
               ))}
             </ul>
             {!day.detail.createdTasks.length && !day.detail.completedTasks.length && <p className="muted">Нет задач</p>}
@@ -480,8 +486,8 @@ function DayModal({ day, timezone }: {
               <div className="rescuetime-intervals">
                 <h4>Интервалы активности</h4>
                 <ul className="record-list scrollable-records">
-                  {rescueIntervals.map((item, index) => (
-                    <li key={`${item.timestamp}-${item.label}-${index}`}>
+                  {rescueIntervals.map((item) => (
+                    <li key={`${item.timestamp}-${item.perspective}-${item.label}`}>
                       <RecordTime timestamp={item.timestamp} timezone={timezone} />
                       <span>{item.label}</span>
                       <b>{duration(item.seconds)}</b>
