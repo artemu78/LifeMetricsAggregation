@@ -9,7 +9,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-import { dashboardStore as store, type DashboardDay } from './store'
+import { dashboardStore as store, type DashboardDay, type DashboardResponse } from './store'
 
 const WEEKDAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
 const QUALITY: Record<string, string> = {
@@ -55,16 +55,21 @@ function CalendarCell({ day }: { day: DashboardDay }) {
   )
 }
 
-function MetricChart({ day, metric, color, title }: {
+function MetricChart({ day, metric, color, title, timezone }: {
   day: DashboardDay
   metric: string
   color: string
   title: string
+  timezone: DashboardResponse['timezone']
 }) {
   const data = day.detail.braceletMetrics
     .filter((point) => point.metric === metric)
     .map((point) => ({
-      time: new Date(point.timestamp).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }),
+      time: new Date(point.timestamp).toLocaleTimeString('ru-RU', {
+        hour: '2-digit',
+        minute: '2-digit',
+        timeZone: timezone,
+      }),
       value: point.value,
     }))
   if (!data.length) return null
@@ -84,7 +89,10 @@ function MetricChart({ day, metric, color, title }: {
   )
 }
 
-function DayModal({ day }: { day: DashboardDay }) {
+function DayModal({ day, timezone }: {
+  day: DashboardDay
+  timezone: DashboardResponse['timezone']
+}) {
   const modalRef = useRef<HTMLElement>(null)
   useEffect(() => {
     const previousOverflow = document.body.style.overflow
@@ -178,8 +186,8 @@ function DayModal({ day }: { day: DashboardDay }) {
         </div>
 
         <div className="charts">
-          <MetricChart day={day} metric="fitness_drive.heart_rate" color="#cf5c4f" title="Пульс" />
-          <MetricChart day={day} metric="fitness_drive.oxygen_saturation" color="#3388a4" title="Кислород" />
+          <MetricChart day={day} metric="fitness_drive.heart_rate" color="#cf5c4f" title="Пульс" timezone={timezone} />
+          <MetricChart day={day} metric="fitness_drive.oxygen_saturation" color="#3388a4" title="Кислород" timezone={timezone} />
         </div>
 
         <div className="detail-grid">
@@ -244,7 +252,9 @@ export const App = observer(function App() {
         {store.dashboard?.days.map((day) => <CalendarCell day={day} key={day.date} />)}
       </section>
 
-      {store.selectedDay && <DayModal day={store.selectedDay} />}
+      {store.selectedDay && store.dashboard && (
+        <DayModal day={store.selectedDay} timezone={store.dashboard.timezone} />
+      )}
     </main>
   )
 })
