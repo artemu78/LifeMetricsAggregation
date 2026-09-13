@@ -6,14 +6,17 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "test": "node --test web/test/*.test.mjs",
     "generate:types": "openapi-typescript openapi.yaml -o web/src/generated/api-types.ts",
     "check:types": "npm run generate:types && git diff --exit-code -- web/src/generated/api-types.ts"
   },
   "dependencies": {
+    "lucide-react": "^1.45.0",
     "mobx": "^6.15.0",
     "mobx-react-lite": "^4.1.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
+    "react-router": "^7.18.2",
     "recharts": "^3.3.0"
   },
   "devDependencies": {

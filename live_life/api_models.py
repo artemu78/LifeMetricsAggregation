@@ -76,6 +76,7 @@ class RescueTimeItem(BaseModel):
     model_config = ConfigDict(
         extra='forbid',
     )
+    timestamp: AwareDatetime
     perspective: Perspective
     label: str
     seconds: confloat(ge=0.0)

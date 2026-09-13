@@ -170,6 +170,10 @@ class DashboardTest(unittest.TestCase):
         encoded = json.dumps(result)
         self.assertIn("Visible task", encoded)
         self.assertIn("Editor", encoded)
+        self.assertEqual(
+            result["days"][0]["detail"]["rescueTime"][0]["timestamp"],
+            "2026-09-10T09:00:00+00:00",
+        )
         self.assertNotIn("DIARY-MUST-NOT-LEAK", encoded)
         self.assertNotIn("rawSecret", encoded)
         self.assertNotIn("/private/path", encoded)
@@ -190,6 +194,13 @@ class ServerContractTest(unittest.TestCase):
             {"code", "message", "details"},
         )
         self.assertEqual(response.json()["code"], "INVALID_DATE_RANGE")
+
+    def test_day_route_serves_dashboard_frontend(self):
+        response = self.client.get("/day/2026-09-10")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("text/html", response.headers["content-type"])
+        self.assertIn("Live Life", response.text)
 
     @patch("live_life.server._run")
     def test_parallel_sync_returns_contractual_conflict(self, run):

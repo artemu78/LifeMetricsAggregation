@@ -1,14 +1,49 @@
 import { useEffect, useRef } from 'react'
 import { observer } from 'mobx-react-lite'
 import {
+  ChartNoAxesCombined,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  CircleHelp,
+  Footprints,
+  HeartPulse,
+  ListPlus,
+  ListTodo,
+  Moon,
+  RefreshCw,
+  Watch,
+  X,
+} from 'lucide-react'
+import {
+  Link,
+  Navigate,
+  Outlet,
+  Route,
+  Routes,
+  useMatch,
+  useNavigate,
+  useParams,
+} from 'react-router'
+import {
+  Cell,
   CartesianGrid,
   Line,
   LineChart,
+  Pie,
+  PieChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from 'recharts'
+import {
+  buildRescueTimeOverview,
+  formatRecordTime,
+  isSourceAvailable,
+  PRODUCTIVITY_LABELS,
+} from './dayDetail'
+import { inclusiveDateCount } from './dashboardWindow'
 import { dashboardStore as store, type DashboardDay, type DashboardResponse } from './store'
 
 const WEEKDAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
@@ -24,9 +59,36 @@ const QUALITY: Record<string, string> = {
   not_run: 'Сбор данных не запускался',
   in_progress: 'Текущий логический день ещё продолжается',
 }
+const SOURCE_ICONS = [
+  { name: 'Браслет', description: 'Сон, шаги и другие измерения браслета', Icon: Watch },
+  { name: 'Welltory', description: 'Измерения Welltory', Icon: HeartPulse },
+  { name: 'Todoist', description: 'Созданные и завершённые задачи', Icon: ListTodo },
+  { name: 'RescueTime', description: 'Активность и продуктивность', Icon: ChartNoAxesCombined },
+]
+const ACTIVITY_COLORS = ['#68a9c9', '#4c7f6d', '#d7a742', '#8f78b5', '#cf7c5c', '#789087']
+const PRODUCTIVITY_COLORS: Record<string, string> = {
+  '-2': '#cf5c4f',
+  '-1': '#db8b51',
+  '0': '#a7b3ae',
+  '1': '#75b7d5',
+  '2': '#4d82d8',
+}
 
 function hours(seconds: number | null) {
   return seconds == null ? '—' : `${(seconds / 3600).toFixed(1)} ч`
+}
+
+function duration(seconds: number) {
+  const minutes = Math.round(seconds / 60)
+  if (minutes < 1) return '< 1 мин'
+  const wholeHours = Math.floor(minutes / 60)
+  const remainingMinutes = minutes % 60
+  if (!wholeHours) return `${remainingMinutes} мин`
+  return remainingMinutes ? `${wholeHours} ч ${remainingMinutes} мин` : `${wholeHours} ч`
+}
+
+function RecordTime({ timestamp, timezone }: { timestamp: string; timezone: string }) {
+  return <time dateTime={timestamp}>{formatRecordTime(timestamp, timezone)}</time>
 }
 
 function monthLabel(date: string) {
@@ -34,16 +96,78 @@ function monthLabel(date: string) {
   return label.charAt(0).toUpperCase() + label.slice(1)
 }
 
+const DashboardLegend = observer(function DashboardLegend() {
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!store.helpOpen) return
+
+    const closeOnOutsideClick = (event: PointerEvent) => {
+      if (!containerRef.current?.contains(event.target as Node)) store.closeHelp()
+    }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') store.closeHelp()
+    }
+
+    document.addEventListener('pointerdown', closeOnOutsideClick)
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutsideClick)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [store.helpOpen])
+
+  return (
+    <div className="help-container" ref={containerRef}>
+      <button
+        className="help-button"
+        onClick={() => store.toggleHelp()}
+        aria-label="Легенда качества и источников"
+        aria-expanded={store.helpOpen}
+        aria-controls="dashboard-legend"
+      >
+        <CircleHelp aria-hidden="true" />
+      </button>
+      {store.helpOpen && (
+        <aside className="legend" id="dashboard-legend" aria-labelledby="legend-title">
+          <div className="legend-header">
+            <h2 id="legend-title">Легенда</h2>
+            <button className="legend-close" onClick={() => store.closeHelp()} aria-label="Закрыть легенду">
+              <X aria-hidden="true" />
+            </button>
+          </div>
+          <section aria-labelledby="quality-legend-title">
+            <h3 id="quality-legend-title">Цвет карточки</h3>
+            {Object.entries(QUALITY).map(([key, label]) => (
+              <p key={key}><i className={`legend-dot quality-${key}`} />{label}</p>
+            ))}
+          </section>
+          <section className="source-legend" aria-labelledby="source-legend-title">
+            <h3 id="source-legend-title">Иконки источников</h3>
+            {SOURCE_ICONS.map(({ name, description, Icon }) => (
+              <p key={name}>
+                <i className="legend-source-icon"><Icon aria-hidden="true" /></i>
+                <span><strong>{name}</strong><small>{description}</small></span>
+              </p>
+            ))}
+            <p className="legend-note">Зелёная иконка — данные источника доступны; серая — недоступны.</p>
+          </section>
+        </aside>
+      )}
+    </div>
+  )
+})
+
 function CalendarCell({ day }: { day: DashboardDay }) {
   const date = new Date(`${day.date}T12:00:00Z`)
-  const sourceAvailable = (source: string) => {
-    const status = day.sources.find((item) => item.source === source)?.status
-    return status === 'success' || status === 'partial'
-  }
+  const braceletAvailable = isSourceAvailable(day, 'bracelet')
+  const welltoryAvailable = isSourceAvailable(day, 'welltory')
+  const todoistAvailable = isSourceAvailable(day, 'todoist')
+  const rescuetimeAvailable = isSourceAvailable(day, 'rescuetime')
   return (
-    <button
+    <Link
       className={`day-card quality-${day.quality}`}
-      onClick={() => store.selectDay(day.date)}
+      to={`/day/${day.date}`}
       aria-label={`${day.date}. ${QUALITY[day.quality]}`}
     >
       <div className="date-row">
@@ -51,18 +175,18 @@ function CalendarCell({ day }: { day: DashboardDay }) {
         <span>{WEEKDAYS[day.weekday - 1]}</span>
       </div>
       <div className="numbers">
-        <div><span>Сон</span><b>{hours(day.bracelet.sleepSeconds)}</b></div>
-        <div><span>Шаги</span><b>{day.bracelet.steps?.toLocaleString('ru-RU') ?? '—'}</b></div>
-        <div><span>Создано</span><b>{day.todoist.created}</b></div>
-        <div><span>Закрыто</span><b>{day.todoist.completed}</b></div>
+        <div><span><Moon aria-hidden="true" />Сон</span><b>{hours(day.bracelet.sleepSeconds)}</b></div>
+        <div><span><Footprints aria-hidden="true" />Шаги</span><b>{day.bracelet.steps?.toLocaleString('ru-RU') ?? '—'}</b></div>
+        <div><span><ListPlus aria-hidden="true" />Создано</span><b>{day.todoist.created}</b></div>
+        <div><span><CheckCircle2 aria-hidden="true" />Закрыто</span><b>{day.todoist.completed}</b></div>
       </div>
       <div className="indicators" aria-label="Источники">
-        <span className={sourceAvailable('bracelet') ? 'on' : ''} title="Браслет">B</span>
-        <span className={sourceAvailable('welltory') ? 'on' : ''} title="Welltory">W</span>
-        <span className={sourceAvailable('todoist') ? 'on' : ''} title="Todoist">T</span>
-        <span className={sourceAvailable('rescuetime') ? 'on' : ''} title="RescueTime">R</span>
+        <span className={braceletAvailable ? 'on' : ''} title="Браслет" aria-label={`Браслет: ${braceletAvailable ? 'данные доступны' : 'нет данных'}`}><Watch aria-hidden="true" /></span>
+        <span className={welltoryAvailable ? 'on' : ''} title="Welltory" aria-label={`Welltory: ${welltoryAvailable ? 'данные доступны' : 'нет данных'}`}><HeartPulse aria-hidden="true" /></span>
+        <span className={todoistAvailable ? 'on' : ''} title="Todoist" aria-label={`Todoist: ${todoistAvailable ? 'данные доступны' : 'нет данных'}`}><ListTodo aria-hidden="true" /></span>
+        <span className={rescuetimeAvailable ? 'on' : ''} title="RescueTime" aria-label={`RescueTime: ${rescuetimeAvailable ? 'данные доступны' : 'нет данных'}`}><ChartNoAxesCombined aria-hidden="true" /></span>
       </div>
-    </button>
+    </Link>
   )
 }
 
@@ -105,13 +229,30 @@ function DayModal({ day, timezone }: {
   timezone: DashboardResponse['timezone']
 }) {
   const modalRef = useRef<HTMLElement>(null)
+  const navigate = useNavigate()
+  const days = store.dashboard?.days ?? []
+  const selectedIndex = days.findIndex((item) => item.date === day.date)
+  const previousDate = selectedIndex > 0 ? days[selectedIndex - 1].date : null
+  const nextDate = selectedIndex >= 0 && selectedIndex < days.length - 1
+    ? days[selectedIndex + 1].date
+    : null
+  const close = () => navigate('/', { replace: true })
+  const selectDate = (date: string) => navigate(`/day/${date}`)
   useEffect(() => {
     const previousOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
     modalRef.current?.focus()
     const handleKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
-        store.selectDay(null)
+        close()
+        return
+      }
+      if (event.key === 'ArrowLeft' && previousDate) {
+        selectDate(previousDate)
+        return
+      }
+      if (event.key === 'ArrowRight' && nextDate) {
+        selectDate(nextDate)
         return
       }
       if (event.key !== 'Tab' || !modalRef.current) return
@@ -134,17 +275,26 @@ function DayModal({ day, timezone }: {
         first.focus()
       }
     }
+    const handlePointerDown = (event: PointerEvent) => {
+      if (modalRef.current && !modalRef.current.contains(event.target as Node)) {
+        close()
+      }
+    }
     window.addEventListener('keydown', handleKey)
+    document.addEventListener('pointerdown', handlePointerDown)
     return () => {
       document.body.style.overflow = previousOverflow
       window.removeEventListener('keydown', handleKey)
+      document.removeEventListener('pointerdown', handlePointerDown)
     }
-  }, [])
+  }, [navigate, previousDate, nextDate])
   const sleep = day.detail.braceletMetrics.filter((point) => point.metric.startsWith('fitness_drive.sleep.'))
-  const rescueActivity = day.detail.rescueTime.filter((item) => item.perspective === 'activity')
-  const rescueProductivity = day.detail.rescueTime.filter((item) => item.perspective === 'productivity')
+  const rescueOverview = buildRescueTimeOverview(day.detail.rescueTime)
+  const rescueIntervals = [...rescueOverview.activityRecords].sort(
+    (left, right) => left.timestamp.localeCompare(right.timestamp),
+  )
   return (
-    <div className="modal-backdrop" onMouseDown={() => store.selectDay(null)}>
+    <div className="modal-backdrop">
       <article
         ref={modalRef}
         className="modal"
@@ -152,14 +302,29 @@ function DayModal({ day, timezone }: {
         aria-modal="true"
         aria-labelledby="day-title"
         tabIndex={-1}
-        onMouseDown={(event) => event.stopPropagation()}
       >
         <header>
-          <div>
+          <div className="day-heading">
             <p className="eyebrow">Подробности дня</p>
             <h2 id="day-title">{day.date}</h2>
+            <nav className="day-navigation" aria-label="Навигация по датам">
+              <button
+                className="date-navigation-button"
+                onClick={() => previousDate && selectDate(previousDate)}
+                disabled={!previousDate}
+              >
+                <ChevronLeft aria-hidden="true" /> Предыдущая дата
+              </button>
+              <button
+                className="date-navigation-button"
+                onClick={() => nextDate && selectDate(nextDate)}
+                disabled={!nextDate}
+              >
+                Следующая дата <ChevronRight aria-hidden="true" />
+              </button>
+            </nav>
           </div>
-          <button className="icon-button" onClick={() => store.selectDay(null)} aria-label="Закрыть">×</button>
+          <button className="icon-button" onClick={close} aria-label="Закрыть"><X aria-hidden="true" /></button>
         </header>
 
         <div className="source-statuses">
@@ -178,9 +343,12 @@ function DayModal({ day, timezone }: {
               <p><span>Шаги</span><b>{day.bracelet.steps?.toLocaleString('ru-RU') ?? '—'}</b></p>
             </div>
             <div className="sleep-stages">
-              {sleep.map((point, index) => (
-                <div key={index}>
-                  <span>{point.metric.replace('fitness_drive.sleep.', '').replace('_seconds', '')}</span>
+              {sleep.map((point) => (
+                <div key={`${point.timestamp}-${point.metric}`}>
+                  <span>
+                    <RecordTime timestamp={point.timestamp} timezone={timezone} />
+                    {point.metric.replace('fitness_drive.sleep.', '').replace('_seconds', '')}
+                  </span>
                   <b>{hours(point.value)}</b>
                 </div>
               ))}
@@ -190,9 +358,12 @@ function DayModal({ day, timezone }: {
           <section className="panel">
             <h3>Welltory</h3>
             <div className="measurement-grid">
-              {day.detail.welltoryMetrics.map((point, index) => (
-                <div key={index}>
-                  <span>{point.metric.replace('welltory.', '')}</span>
+              {day.detail.welltoryMetrics.map((point) => (
+                <div key={`${point.timestamp}-${point.metric}`}>
+                  <span>
+                    <RecordTime timestamp={point.timestamp} timezone={timezone} />
+                    {point.metric.replace('welltory.', '')}
+                  </span>
                   <b>{point.value.toFixed(1)} {point.unit ?? ''}</b>
                 </div>
               ))}
@@ -206,22 +377,126 @@ function DayModal({ day, timezone }: {
           <MetricChart day={day} metric="fitness_drive.oxygen_saturation" color="#3388a4" title="Кислород" timezone={timezone} />
         </div>
 
-        <div className="detail-grid">
+        <div className="activity-detail-grid">
           <section className="panel">
             <h3>Todoist</h3>
             <h4>Созданные</h4>
-            <ul>{day.detail.createdTasks.map((task, i) => <li key={i}>{task.content}</li>)}</ul>
+            <ul className="record-list">
+              {day.detail.createdTasks.map((task) => (
+                <li key={`${task.timestamp}-${task.content}`}><RecordTime timestamp={task.timestamp} timezone={timezone} /><span>{task.content}</span></li>
+              ))}
+            </ul>
             <h4>Завершённые</h4>
-            <ul>{day.detail.completedTasks.map((task, i) => <li key={i}>{task.content}</li>)}</ul>
+            <ul className="record-list">
+              {day.detail.completedTasks.map((task) => (
+                <li key={`${task.timestamp}-${task.content}`}><RecordTime timestamp={task.timestamp} timezone={timezone} /><span>{task.content}</span></li>
+              ))}
+            </ul>
             {!day.detail.createdTasks.length && !day.detail.completedTasks.length && <p className="muted">Нет задач</p>}
           </section>
 
-          <section className="panel">
-            <h3>RescueTime</h3>
-            <h4>Активность</h4>
-            <ul>{rescueActivity.map((item, i) => <li key={i}>{item.label}: {hours(item.seconds)}</li>)}</ul>
-            <h4>Продуктивность</h4>
-            <ul>{rescueProductivity.map((item, i) => <li key={i}>{item.label}: {hours(item.seconds)}</li>)}</ul>
+          <section className="panel rescuetime-panel">
+            <div className="panel-heading">
+              <div>
+                <h3>RescueTime</h3>
+                <p className="muted">Обзор отслеженного времени</p>
+              </div>
+              <div className="tracked-total">
+                <span>Всего отслежено</span>
+                <strong>{duration(rescueOverview.totalTrackedSeconds)}</strong>
+              </div>
+            </div>
+
+            {rescueOverview.totalTrackedSeconds > 0 ? (
+              <div className="rescuetime-overview">
+                <div className="productivity-summary">
+                  <h4>Индекс продуктивности</h4>
+                  {rescueOverview.productivityIndex == null ? (
+                    <p className="muted">Нет данных продуктивности</p>
+                  ) : (
+                    <>
+                      <div
+                        className="productivity-chart"
+                        role="img"
+                        aria-label={`Индекс продуктивности: ${rescueOverview.productivityIndex} из 100`}
+                      >
+                        <ResponsiveContainer width="100%" height={220}>
+                          <PieChart>
+                            <Pie
+                              data={rescueOverview.productivity}
+                              dataKey="seconds"
+                              nameKey="name"
+                              innerRadius={68}
+                              outerRadius={96}
+                              stroke="none"
+                            >
+                              {rescueOverview.productivity.map((level) => (
+                                <Cell
+                                  key={level.label}
+                                  fill={PRODUCTIVITY_COLORS[level.label] ?? '#789087'}
+                                />
+                              ))}
+                            </Pie>
+                            <Tooltip formatter={(value) => duration(Number(value))} />
+                          </PieChart>
+                        </ResponsiveContainer>
+                        <div className="productivity-chart-value">
+                          <strong>{rescueOverview.productivityIndex}</strong>
+                          <span>из 100</span>
+                        </div>
+                      </div>
+                      <ul className="productivity-legend">
+                        {rescueOverview.productivity.map((level) => (
+                          <li key={level.label}>
+                            <i style={{ background: PRODUCTIVITY_COLORS[level.label] ?? '#789087' }} />
+                            <span>{PRODUCTIVITY_LABELS[level.label] ?? level.name}</span>
+                            <b>{duration(level.seconds)}</b>
+                          </li>
+                        ))}
+                      </ul>
+                    </>
+                  )}
+                  <p className="note">Локальный расчёт по уровням RescueTime от −2 до 2.</p>
+                </div>
+
+                <div className="activity-ranking">
+                  <h4>Основные активности</h4>
+                  {rescueOverview.categories.slice(0, 6).map((category, index) => (
+                    <div className="activity-rank" key={category.label}>
+                      <div>
+                        <span><b>{Math.round(category.percentage)}%</b> {category.label}</span>
+                        <time>{duration(category.seconds)}</time>
+                      </div>
+                      <i aria-hidden="true">
+                        <span
+                          style={{
+                            width: `${category.percentage}%`,
+                            background: ACTIVITY_COLORS[index % ACTIVITY_COLORS.length],
+                          }}
+                        />
+                      </i>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <p className="muted">Нет отслеженного времени</p>
+            )}
+
+            {rescueIntervals.length > 0 && (
+              <div className="rescuetime-intervals">
+                <h4>Интервалы активности</h4>
+                <ul className="record-list scrollable-records">
+                  {rescueIntervals.map((item) => (
+                    <li key={`${item.timestamp}-${item.perspective}-${item.label}`}>
+                      <RecordTime timestamp={item.timestamp} timezone={timezone} />
+                      <span>{item.label}</span>
+                      <b>{duration(item.seconds)}</b>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
             <p className="note">Активность и продуктивность — разные классификации одного времени и не складываются.</p>
           </section>
         </div>
@@ -230,7 +505,18 @@ function DayModal({ day, timezone }: {
   )
 }
 
-export const App = observer(function App() {
+const DayRoute = observer(function DayRoute() {
+  const { date } = useParams<{ date: string }>()
+  const day = store.dashboard?.days.find((item) => item.date === date)
+
+  if (!store.dashboard) return null
+  if (!day) return <Navigate to="/" replace />
+
+  return <DayModal day={day} timezone={store.dashboard.timezone} />
+})
+
+const Dashboard = observer(function Dashboard() {
+  const dayMatch = useMatch('/day/:date')
   useEffect(() => {
     void store.load()
   }, [])
@@ -244,26 +530,22 @@ export const App = observer(function App() {
     else groups.push({ key, days: [day] })
     return groups
   }, [])
+  const displayedDayCount = store.dashboard?.days.length
+    ?? inclusiveDateCount(store.from, store.to)
   return (
-    <main className={store.selectedDay ? 'app blurred' : 'app'}>
+    <main className={dayMatch ? 'app blurred' : 'app'}>
       <header className="topbar">
         <div>
           <p className="eyebrow">Локальный обзор</p>
           <h1>Live Life</h1>
-          <p className="subtitle">30 дней · {store.from} — {store.to}</p>
+          <p className="subtitle">Дней: {displayedDayCount} · {store.from} — {store.to}</p>
         </div>
         <div className="actions">
           <button className="sync-button" onClick={() => void store.syncBracelet()} disabled={store.syncing}>
+            <RefreshCw className={store.syncing ? 'spinning' : undefined} aria-hidden="true" />
             {store.syncing ? 'Обновляем…' : 'Обновить браслет'}
           </button>
-          <button className="help-button" onClick={() => store.toggleHelp()} aria-label="Легенда качества">?</button>
-          {store.helpOpen && (
-            <div className="legend">
-              {Object.entries(QUALITY).map(([key, label]) => (
-                <p key={key}><i className={`legend-dot quality-${key}`} />{label}</p>
-              ))}
-            </div>
-          )}
+          <DashboardLegend />
         </div>
       </header>
 
@@ -286,9 +568,18 @@ export const App = observer(function App() {
         ))}
       </div>
 
-      {store.selectedDay && store.dashboard && (
-        <DayModal day={store.selectedDay} timezone={store.dashboard.timezone} />
-      )}
+      <Outlet />
     </main>
   )
 })
+
+export function App() {
+  return (
+    <Routes>
+      <Route path="/" element={<Dashboard />}>
+        <Route path="day/:date" element={<DayRoute />} />
+      </Route>
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  )
+}
