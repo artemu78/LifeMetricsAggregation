@@ -12,6 +12,11 @@ import {
 import { dashboardStore as store, type DashboardDay, type DashboardResponse } from './store'
 
 const WEEKDAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
+const MONTH_FORMAT = new Intl.DateTimeFormat('ru-RU', {
+  month: 'long',
+  year: 'numeric',
+  timeZone: 'UTC',
+})
 const QUALITY: Record<string, string> = {
   complete: 'Все источники обновлены',
   partial: 'Есть частичные или исторические данные без подтверждённого запуска',
@@ -22,6 +27,11 @@ const QUALITY: Record<string, string> = {
 
 function hours(seconds: number | null) {
   return seconds == null ? '—' : `${(seconds / 3600).toFixed(1)} ч`
+}
+
+function monthLabel(date: string) {
+  const label = MONTH_FORMAT.format(new Date(`${date.slice(0, 7)}-01T12:00:00Z`))
+  return label.charAt(0).toUpperCase() + label.slice(1)
 }
 
 function CalendarCell({ day }: { day: DashboardDay }) {
@@ -47,9 +57,10 @@ function CalendarCell({ day }: { day: DashboardDay }) {
         <div><span>Закрыто</span><b>{day.todoist.completed}</b></div>
       </div>
       <div className="indicators" aria-label="Источники">
-        <span className={sourceAvailable('welltory') ? 'on' : ''}>W</span>
-        <span className={sourceAvailable('todoist') ? 'on' : ''}>T</span>
-        <span className={sourceAvailable('rescuetime') ? 'on' : ''}>R</span>
+        <span className={sourceAvailable('bracelet') ? 'on' : ''} title="Браслет">B</span>
+        <span className={sourceAvailable('welltory') ? 'on' : ''} title="Welltory">W</span>
+        <span className={sourceAvailable('todoist') ? 'on' : ''} title="Todoist">T</span>
+        <span className={sourceAvailable('rescuetime') ? 'on' : ''} title="RescueTime">R</span>
       </div>
     </button>
   )
@@ -223,7 +234,16 @@ export const App = observer(function App() {
   useEffect(() => {
     void store.load()
   }, [])
-  const firstOffset = store.dashboard?.days[0] ? store.dashboard.days[0].weekday - 1 : 0
+  const monthGroups = (store.dashboard?.days ?? []).reduce<Array<{
+    key: string
+    days: DashboardDay[]
+  }>>((groups, day) => {
+    const key = day.date.slice(0, 7)
+    const current = groups[groups.length - 1]
+    if (current?.key === key) current.days.push(day)
+    else groups.push({ key, days: [day] })
+    return groups
+  }, [])
   return (
     <main className={store.selectedDay ? 'app blurred' : 'app'}>
       <header className="topbar">
@@ -251,11 +271,20 @@ export const App = observer(function App() {
       {store.syncMessage && <div className="message success">{store.syncMessage}</div>}
       {store.loading && !store.dashboard && <div className="loading">Загружаем календарь…</div>}
 
-      <section className="calendar" aria-label="Календарь данных">
-        {WEEKDAYS.map((day) => <div className="weekday" key={day}>{day}</div>)}
-        {Array.from({ length: firstOffset }).map((_, i) => <div className="empty" key={`empty-${i}`} />)}
-        {store.dashboard?.days.map((day) => <CalendarCell day={day} key={day.date} />)}
-      </section>
+      <div className="calendar-months" aria-label="Календарь данных">
+        {monthGroups.map((month) => (
+          <section className="month-section" key={month.key} aria-labelledby={`month-${month.key}`}>
+            <h2 className="month-title" id={`month-${month.key}`}>{monthLabel(month.days[0].date)}</h2>
+            <div className="calendar">
+              {WEEKDAYS.map((day) => <div className="weekday" key={day}>{day}</div>)}
+              {Array.from({ length: month.days[0].weekday - 1 }).map((_, i) => (
+                <div className="empty" key={`empty-${month.key}-${i}`} />
+              ))}
+              {month.days.map((day) => <CalendarCell day={day} key={day.date} />)}
+            </div>
+          </section>
+        ))}
+      </div>
 
       {store.selectedDay && store.dashboard && (
         <DayModal day={store.selectedDay} timezone={store.dashboard.timezone} />

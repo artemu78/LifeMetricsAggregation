@@ -60,20 +60,26 @@ h1 { margin-bottom: 4px; font-size: clamp(2rem, 4vw, 3.5rem); letter-spacing: -0
 .legend p { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; font-size: .85rem; }
 .legend-dot { width: 12px; height: 12px; border-radius: 50%; flex: 0 0 auto; }
 
-.calendar {
+.calendar-months {
   display: grid;
-  grid-template-columns: repeat(7, minmax(130px, 1fr));
-  gap: 12px;
+  gap: 34px;
   max-width: 1480px;
   margin: 0 auto;
+}
+.month-section + .month-section { padding-top: 30px; border-top: 1px solid #cfddd6; }
+.month-title { margin-bottom: 14px; font-size: 1.5rem; letter-spacing: -.02em; }
+.calendar {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(145px, 1fr));
+  gap: 12px;
   overflow-x: auto;
 }
 .weekday { padding: 0 8px 5px; color: #668078; font-size: .78rem; font-weight: 800; text-transform: uppercase; }
 .empty { min-height: 1px; }
 .day-card {
   position: relative;
-  min-height: 190px;
-  padding: 16px;
+  min-height: 220px;
+  padding: 16px 16px 58px;
   border: 0;
   border-top: 7px solid transparent;
   border-radius: 18px;
@@ -92,12 +98,12 @@ h1 { margin-bottom: 4px; font-size: clamp(2rem, 4vw, 3.5rem); letter-spacing: -0
 .numbers div { display: flex; flex-direction: column; }
 .numbers span { color: #789087; font-size: .72rem; }
 .numbers b { margin-top: 2px; font-size: .98rem; }
-.indicators { position: absolute; left: 16px; bottom: 14px; display: flex; gap: 7px; }
+.indicators { position: absolute; left: 16px; bottom: 16px; display: flex; gap: 5px; }
 .indicators span {
   display: grid;
   place-items: center;
-  width: 25px;
-  height: 25px;
+  width: 23px;
+  height: 23px;
   border-radius: 8px;
   background: #e3e9e6;
   color: #82938d;
@@ -154,7 +160,7 @@ h1 { margin-bottom: 4px; font-size: clamp(2rem, 4vw, 3.5rem); letter-spacing: -0
 .note { color: #71877e; font-size: .78rem; line-height: 1.4; }
 
 @media (max-width: 900px) {
-  .calendar { grid-template-columns: repeat(7, minmax(115px, 1fr)); }
+  .calendar { grid-template-columns: repeat(7, minmax(145px, 1fr)); }
   .topbar { flex-direction: column; }
   .detail-grid, .charts { grid-template-columns: 1fr; }
 }
