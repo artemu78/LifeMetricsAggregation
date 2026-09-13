@@ -10,6 +10,7 @@
     "check:types": "npm run generate:types && git diff --exit-code -- web/src/generated/api-types.ts"
   },
   "dependencies": {
+    "lucide-react": "^1.45.0",
     "mobx": "^6.15.0",
     "mobx-react-lite": "^4.1.0",
     "react": "^19.2.0",

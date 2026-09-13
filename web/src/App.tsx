@@ -1,6 +1,21 @@
 import { useEffect, useRef } from 'react'
 import { observer } from 'mobx-react-lite'
 import {
+  ChartNoAxesCombined,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  CircleHelp,
+  Footprints,
+  HeartPulse,
+  ListPlus,
+  ListTodo,
+  Moon,
+  RefreshCw,
+  Watch,
+  X,
+} from 'lucide-react'
+import {
   Link,
   Navigate,
   Outlet,
@@ -61,16 +76,16 @@ function CalendarCell({ day }: { day: DashboardDay }) {
         <span>{WEEKDAYS[day.weekday - 1]}</span>
       </div>
       <div className="numbers">
-        <div><span>Сон</span><b>{hours(day.bracelet.sleepSeconds)}</b></div>
-        <div><span>Шаги</span><b>{day.bracelet.steps?.toLocaleString('ru-RU') ?? '—'}</b></div>
-        <div><span>Создано</span><b>{day.todoist.created}</b></div>
-        <div><span>Закрыто</span><b>{day.todoist.completed}</b></div>
+        <div><span><Moon aria-hidden="true" />Сон</span><b>{hours(day.bracelet.sleepSeconds)}</b></div>
+        <div><span><Footprints aria-hidden="true" />Шаги</span><b>{day.bracelet.steps?.toLocaleString('ru-RU') ?? '—'}</b></div>
+        <div><span><ListPlus aria-hidden="true" />Создано</span><b>{day.todoist.created}</b></div>
+        <div><span><CheckCircle2 aria-hidden="true" />Закрыто</span><b>{day.todoist.completed}</b></div>
       </div>
       <div className="indicators" aria-label="Источники">
-        <span className={sourceAvailable('bracelet') ? 'on' : ''} title="Браслет">B</span>
-        <span className={sourceAvailable('welltory') ? 'on' : ''} title="Welltory">W</span>
-        <span className={sourceAvailable('todoist') ? 'on' : ''} title="Todoist">T</span>
-        <span className={sourceAvailable('rescuetime') ? 'on' : ''} title="RescueTime">R</span>
+        <span className={sourceAvailable('bracelet') ? 'on' : ''} title="Браслет" aria-label={`Браслет: ${sourceAvailable('bracelet') ? 'данные доступны' : 'нет данных'}`}><Watch aria-hidden="true" /></span>
+        <span className={sourceAvailable('welltory') ? 'on' : ''} title="Welltory" aria-label={`Welltory: ${sourceAvailable('welltory') ? 'данные доступны' : 'нет данных'}`}><HeartPulse aria-hidden="true" /></span>
+        <span className={sourceAvailable('todoist') ? 'on' : ''} title="Todoist" aria-label={`Todoist: ${sourceAvailable('todoist') ? 'данные доступны' : 'нет данных'}`}><ListTodo aria-hidden="true" /></span>
+        <span className={sourceAvailable('rescuetime') ? 'on' : ''} title="RescueTime" aria-label={`RescueTime: ${sourceAvailable('rescuetime') ? 'данные доступны' : 'нет данных'}`}><ChartNoAxesCombined aria-hidden="true" /></span>
       </div>
     </Link>
   )
@@ -191,18 +206,18 @@ function DayModal({ day, timezone }: {
                 onClick={() => previousDate && selectDate(previousDate)}
                 disabled={!previousDate}
               >
-                <span aria-hidden="true">←</span> Предыдущая дата
+                <ChevronLeft aria-hidden="true" /> Предыдущая дата
               </button>
               <button
                 className="date-navigation-button"
                 onClick={() => nextDate && selectDate(nextDate)}
                 disabled={!nextDate}
               >
-                Следующая дата <span aria-hidden="true">→</span>
+                Следующая дата <ChevronRight aria-hidden="true" />
               </button>
             </nav>
           </div>
-          <button className="icon-button" onClick={close} aria-label="Закрыть">×</button>
+          <button className="icon-button" onClick={close} aria-label="Закрыть"><X aria-hidden="true" /></button>
         </header>
 
         <div className="source-statuses">
@@ -308,9 +323,10 @@ const Dashboard = observer(function Dashboard() {
         </div>
         <div className="actions">
           <button className="sync-button" onClick={() => void store.syncBracelet()} disabled={store.syncing}>
+            <RefreshCw className={store.syncing ? 'spinning' : undefined} aria-hidden="true" />
             {store.syncing ? 'Обновляем…' : 'Обновить браслет'}
           </button>
-          <button className="help-button" onClick={() => store.toggleHelp()} aria-label="Легенда качества">?</button>
+          <button className="help-button" onClick={() => store.toggleHelp()} aria-label="Легенда качества"><CircleHelp aria-hidden="true" /></button>
           {store.helpOpen && (
             <div className="legend">
               {Object.entries(QUALITY).map(([key, label]) => (

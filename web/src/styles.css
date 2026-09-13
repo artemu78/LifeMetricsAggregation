@@ -41,9 +41,14 @@ h1 { margin-bottom: 4px; font-size: clamp(2rem, 4vw, 3.5rem); letter-spacing: -0
   cursor: pointer;
   box-shadow: 0 8px 24px rgba(36, 74, 62, .14);
 }
-.sync-button { padding: 12px 18px; border-radius: 12px; color: white; background: #245c4b; font-weight: 750; }
+.sync-button { display: inline-flex; align-items: center; gap: 8px; padding: 12px 18px; border-radius: 12px; color: white; background: #245c4b; font-weight: 750; }
+.sync-button svg { width: 18px; height: 18px; }
 .sync-button:disabled { opacity: .6; cursor: wait; }
-.help-button, .icon-button { width: 44px; height: 44px; border-radius: 50%; background: white; color: #245c4b; font-size: 1.2rem; font-weight: 800; }
+.help-button, .icon-button { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; background: white; color: #245c4b; }
+.help-button svg, .icon-button svg { width: 21px; height: 21px; }
+.spinning { animation: spin 900ms linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spinning { animation: none; } }
 
 .legend {
   position: absolute;
@@ -98,7 +103,8 @@ h1 { margin-bottom: 4px; font-size: clamp(2rem, 4vw, 3.5rem); letter-spacing: -0
 .date-row span { color: #73877f; font-weight: 700; }
 .numbers { display: grid; grid-template-columns: 1fr 1fr; gap: 11px; }
 .numbers div { display: flex; flex-direction: column; }
-.numbers span { color: #789087; font-size: .72rem; }
+.numbers span { display: flex; align-items: center; gap: 4px; color: #789087; font-size: .72rem; }
+.numbers span svg { width: 13px; height: 13px; stroke-width: 2.2; }
 .numbers b { margin-top: 2px; font-size: .98rem; }
 .indicators { position: absolute; left: 16px; bottom: 16px; display: flex; gap: 5px; }
 .indicators span {
@@ -109,9 +115,8 @@ h1 { margin-bottom: 4px; font-size: clamp(2rem, 4vw, 3.5rem); letter-spacing: -0
   border-radius: 8px;
   background: #e3e9e6;
   color: #82938d;
-  font-size: .69rem;
-  font-weight: 900;
 }
+.indicators svg { width: 13px; height: 13px; stroke-width: 2.3; }
 .indicators span.on { color: white; background: #4c7f6d; }
 .quality-complete { border-color: #5fa47f; }
 .quality-partial, .quality-in_progress { border-color: #d7a742; }
@@ -147,10 +152,12 @@ h1 { margin-bottom: 4px; font-size: clamp(2rem, 4vw, 3.5rem); letter-spacing: -0
 }
 .modal > header { display: flex; justify-content: space-between; align-items: flex-start; }
 .modal h2 { margin-bottom: 14px; font-size: clamp(2rem, 4vw, 3rem); }
-.icon-button { font-size: 2rem; line-height: 1; }
 .day-heading { min-width: 0; }
 .day-navigation { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
 .date-navigation-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   padding: 9px 13px;
   border: 1px solid #cbdad3;
   border-radius: 11px;
@@ -159,6 +166,7 @@ h1 { margin-bottom: 4px; font-size: clamp(2rem, 4vw, 3.5rem); letter-spacing: -0
   font-weight: 750;
   cursor: pointer;
 }
+.date-navigation-button svg { width: 17px; height: 17px; }
 .date-navigation-button:hover:not(:disabled) { background: white; border-color: #7ea593; }
 .date-navigation-button:focus-visible { outline: 3px solid rgba(36, 92, 75, .25); outline-offset: 2px; }
 .date-navigation-button:disabled { color: #9aa9a3; cursor: not-allowed; opacity: .6; }
