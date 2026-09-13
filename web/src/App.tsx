@@ -1,6 +1,16 @@
 import { useEffect, useRef } from 'react'
 import { observer } from 'mobx-react-lite'
 import {
+  Link,
+  Navigate,
+  Outlet,
+  Route,
+  Routes,
+  useMatch,
+  useNavigate,
+  useParams,
+} from 'react-router'
+import {
   CartesianGrid,
   Line,
   LineChart,
@@ -41,9 +51,9 @@ function CalendarCell({ day }: { day: DashboardDay }) {
     return status === 'success' || status === 'partial'
   }
   return (
-    <button
+    <Link
       className={`day-card quality-${day.quality}`}
-      onClick={() => store.selectDay(day.date)}
+      to={`/day/${day.date}`}
       aria-label={`${day.date}. ${QUALITY[day.quality]}`}
     >
       <div className="date-row">
@@ -62,7 +72,7 @@ function CalendarCell({ day }: { day: DashboardDay }) {
         <span className={sourceAvailable('todoist') ? 'on' : ''} title="Todoist">T</span>
         <span className={sourceAvailable('rescuetime') ? 'on' : ''} title="RescueTime">R</span>
       </div>
-    </button>
+    </Link>
   )
 }
 
@@ -105,27 +115,30 @@ function DayModal({ day, timezone }: {
   timezone: DashboardResponse['timezone']
 }) {
   const modalRef = useRef<HTMLElement>(null)
+  const navigate = useNavigate()
   const days = store.dashboard?.days ?? []
   const selectedIndex = days.findIndex((item) => item.date === day.date)
   const previousDate = selectedIndex > 0 ? days[selectedIndex - 1].date : null
   const nextDate = selectedIndex >= 0 && selectedIndex < days.length - 1
     ? days[selectedIndex + 1].date
     : null
+  const close = () => navigate('/', { replace: true })
+  const selectDate = (date: string) => navigate(`/day/${date}`)
   useEffect(() => {
     const previousOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
     modalRef.current?.focus()
     const handleKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
-        store.selectDay(null)
+        close()
         return
       }
       if (event.key === 'ArrowLeft' && previousDate) {
-        store.selectDay(previousDate)
+        selectDate(previousDate)
         return
       }
       if (event.key === 'ArrowRight' && nextDate) {
-        store.selectDay(nextDate)
+        selectDate(nextDate)
         return
       }
       if (event.key !== 'Tab' || !modalRef.current) return
@@ -153,12 +166,12 @@ function DayModal({ day, timezone }: {
       document.body.style.overflow = previousOverflow
       window.removeEventListener('keydown', handleKey)
     }
-  }, [previousDate, nextDate])
+  }, [navigate, previousDate, nextDate])
   const sleep = day.detail.braceletMetrics.filter((point) => point.metric.startsWith('fitness_drive.sleep.'))
   const rescueActivity = day.detail.rescueTime.filter((item) => item.perspective === 'activity')
   const rescueProductivity = day.detail.rescueTime.filter((item) => item.perspective === 'productivity')
   return (
-    <div className="modal-backdrop" onMouseDown={() => store.selectDay(null)}>
+    <div className="modal-backdrop" onMouseDown={close}>
       <article
         ref={modalRef}
         className="modal"
@@ -175,21 +188,21 @@ function DayModal({ day, timezone }: {
             <nav className="day-navigation" aria-label="Навигация по датам">
               <button
                 className="date-navigation-button"
-                onClick={() => previousDate && store.selectDay(previousDate)}
+                onClick={() => previousDate && selectDate(previousDate)}
                 disabled={!previousDate}
               >
                 <span aria-hidden="true">←</span> Предыдущая дата
               </button>
               <button
                 className="date-navigation-button"
-                onClick={() => nextDate && store.selectDay(nextDate)}
+                onClick={() => nextDate && selectDate(nextDate)}
                 disabled={!nextDate}
               >
                 Следующая дата <span aria-hidden="true">→</span>
               </button>
             </nav>
           </div>
-          <button className="icon-button" onClick={() => store.selectDay(null)} aria-label="Закрыть">×</button>
+          <button className="icon-button" onClick={close} aria-label="Закрыть">×</button>
         </header>
 
         <div className="source-statuses">
@@ -260,7 +273,18 @@ function DayModal({ day, timezone }: {
   )
 }
 
-export const App = observer(function App() {
+const DayRoute = observer(function DayRoute() {
+  const { date } = useParams<{ date: string }>()
+  const day = store.dashboard?.days.find((item) => item.date === date)
+
+  if (!store.dashboard) return null
+  if (!day) return <Navigate to="/" replace />
+
+  return <DayModal day={day} timezone={store.dashboard.timezone} />
+})
+
+const Dashboard = observer(function Dashboard() {
+  const dayMatch = useMatch('/day/:date')
   useEffect(() => {
     void store.load()
   }, [])
@@ -275,7 +299,7 @@ export const App = observer(function App() {
     return groups
   }, [])
   return (
-    <main className={store.selectedDay ? 'app blurred' : 'app'}>
+    <main className={dayMatch ? 'app blurred' : 'app'}>
       <header className="topbar">
         <div>
           <p className="eyebrow">Локальный обзор</p>
@@ -316,9 +340,18 @@ export const App = observer(function App() {
         ))}
       </div>
 
-      {store.selectedDay && store.dashboard && (
-        <DayModal day={store.selectedDay} timezone={store.dashboard.timezone} />
-      )}
+      <Outlet />
     </main>
   )
 })
+
+export function App() {
+  return (
+    <Routes>
+      <Route path="/" element={<Dashboard />}>
+        <Route path="day/:date" element={<DayRoute />} />
+      </Route>
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  )
+}

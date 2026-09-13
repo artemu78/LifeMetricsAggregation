@@ -10,7 +10,7 @@ import uvicorn
 import yaml
 from fastapi import FastAPI, Query
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 
@@ -102,12 +102,27 @@ def canonical_openapi() -> dict:
 app.openapi = canonical_openapi
 
 STATIC = ROOT / "web-dist"
+
+
+def _frontend() -> FileResponse | HTMLResponse:
+    index = STATIC / "index.html"
+    if index.exists():
+        return FileResponse(index)
+    return HTMLResponse("<h1>Live Life</h1><p>Run npm run build to create the dashboard.</p>")
+
+
+@app.get("/", response_class=HTMLResponse, include_in_schema=False)
+def dashboard_frontend():
+    return _frontend()
+
+
+@app.get("/day/{day}", response_class=HTMLResponse, include_in_schema=False)
+def dashboard_day_frontend(day: str):
+    return _frontend()
+
+
 if STATIC.exists():
     app.mount("/", StaticFiles(directory=STATIC, html=True), name="dashboard")
-else:
-    @app.get("/", response_class=HTMLResponse, include_in_schema=False)
-    def frontend_missing():
-        return "<h1>Live Life</h1><p>Run npm run build to create the dashboard.</p>"
 
 
 def main() -> None:

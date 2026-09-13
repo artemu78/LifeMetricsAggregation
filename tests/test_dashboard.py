@@ -191,6 +191,13 @@ class ServerContractTest(unittest.TestCase):
         )
         self.assertEqual(response.json()["code"], "INVALID_DATE_RANGE")
 
+    def test_day_route_serves_dashboard_frontend(self):
+        response = self.client.get("/day/2026-09-10")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("text/html", response.headers["content-type"])
+        self.assertIn("Live Life", response.text)
+
     @patch("live_life.server._run")
     def test_parallel_sync_returns_contractual_conflict(self, run):
         run.return_value = subprocess.CompletedProcess([], 75, "", "SYNC_ALREADY_RUNNING")

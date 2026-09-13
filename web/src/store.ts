@@ -30,7 +30,6 @@ export class DashboardStore {
   from = moscowDate(-29)
   to = moscowDate()
   dashboard: DashboardResponse | null = null
-  selectedDate: string | null = null
   loading = false
   syncing = false
   helpOpen = false
@@ -39,10 +38,6 @@ export class DashboardStore {
 
   constructor() {
     makeAutoObservable(this)
-  }
-
-  get selectedDay(): DashboardDay | null {
-    return this.dashboard?.days.find((day) => day.date === this.selectedDate) ?? null
   }
 
   async load() {
@@ -93,10 +88,6 @@ export class DashboardStore {
         this.syncing = false
       })
     }
-  }
-
-  selectDay(date: string | null) {
-    this.selectedDate = date
   }
 
   toggleHelp() {
