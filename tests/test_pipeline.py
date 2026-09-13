@@ -637,6 +637,85 @@ class PipelineTest(unittest.TestCase):
         )
         self.assertEqual(second["downloaded"], 0)
 
+    def test_sync_rename_replaces_cached_path_and_import_projection(self):
+        """Verify a renamed Drive item removes its previous cached projection."""
+        cache = self.config.root / "data/inbox/fitness_drive"
+        config = replace(
+            self.config,
+            fitness_drive_folder_id="root",
+            fitness_drive_cache=cache,
+        )
+        document = {
+            "header": {"schemaVersion": 1, "recordCount": 1},
+            "records": [
+                {
+                    "recordType": "steps",
+                    "startTime": "2026-07-18T10:00:00Z",
+                    "endTime": "2026-07-18T10:15:00Z",
+                    "count": 1250,
+                }
+            ],
+        }
+
+        class FakeReader:
+            name = "before.json"
+
+            def list_children(self, folder_id):
+                """Return one mutable synthetic Drive item."""
+                if folder_id == "root":
+                    return [{"id": "year", "name": "2026", "mimeType": FOLDER_MIME_TYPE}]
+                if folder_id == "year":
+                    return [{"id": "month", "name": "07", "mimeType": FOLDER_MIME_TYPE}]
+                if folder_id == "month":
+                    return [{
+                        "id": "same-id",
+                        "name": self.name,
+                        "mimeType": "application/json",
+                        "modifiedTime": "1",
+                    }]
+                return []
+
+            def download(self, file_id, destination):
+                """Write the synthetic export document to the requested cache path."""
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_text(json.dumps(document), encoding="utf-8")
+
+        reader = FakeReader()
+        sync_fitness_drive(config, date(2026, 7, 18), date(2026, 7, 18), reader=reader)
+        import_fitness_drive(config)
+        old_path = (cache / "same-id--before.json").resolve()
+        new_path = (cache / "same-id--after.json").resolve()
+
+        reader.name = "after.json"
+        sync_fitness_drive(config, date(2026, 7, 18), date(2026, 7, 18), reader=reader)
+
+        self.assertFalse(old_path.exists())
+        self.assertTrue(new_path.exists())
+        with connect(config.database) as conn:
+            self.assertEqual(
+                conn.execute(
+                    "SELECT COUNT(*) FROM metric_events WHERE origin_file = ?",
+                    (str(old_path),),
+                ).fetchone()[0],
+                0,
+            )
+            self.assertEqual(
+                conn.execute(
+                    "SELECT COUNT(*) FROM import_files WHERE path = ?",
+                    (str(old_path),),
+                ).fetchone()[0],
+                0,
+            )
+
+        import_fitness_drive(config)
+        with connect(config.database) as conn:
+            self.assertEqual(
+                conn.execute(
+                    "SELECT origin_file FROM metric_events WHERE source = 'fitness_drive'"
+                ).fetchone()[0],
+                str(new_path),
+            )
+
     def test_imports_drive_schema_and_ignores_retired_csv(self):
         """Verify imports drive schema and ignores retired csv."""
         cache = self.config.root / "data/inbox/fitness_drive"

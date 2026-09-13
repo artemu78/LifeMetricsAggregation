@@ -8,6 +8,7 @@ import json
 import re
 
 from .config import Config
+from .db import connect
 
 
 FOLDER_MIME_TYPE = "application/vnd.google-apps.folder"
@@ -126,6 +127,28 @@ def _walk_files(reader, folder_id: str) -> Iterable[dict[str, str]]:
             yield item
 
 
+def _remove_replaced_cache(config: Config, local_name: object, destination: Path) -> None:
+    """Remove one renamed cache file and its imported fitness projection."""
+    if not isinstance(local_name, str) or local_name == destination.name:
+        return
+    previous = (config.fitness_drive_cache / local_name).resolve()
+    if previous.parent != config.fitness_drive_cache.resolve():
+        raise ValueError("Invalid localName in fitness Drive manifest")
+    if config.database.exists():
+        with connect(config.database) as conn:
+            conn.execute(
+                "DELETE FROM metric_events WHERE source = 'fitness_drive' AND origin_file = ?",
+                (str(previous),),
+            )
+            conn.execute(
+                "DELETE FROM import_files WHERE source = 'fitness_drive' AND path = ?",
+                (str(previous),),
+            )
+            previous.unlink(missing_ok=True)
+    else:
+        previous.unlink(missing_ok=True)
+
+
 def sync_fitness_drive(
     config: Config,
     start: date,
@@ -186,7 +209,7 @@ def sync_fitness_drive(
         fingerprint = item.get("md5Checksum") or item.get("modifiedTime") or "unknown"
         previous = manifest.get(item["id"], {})
         unchanged = destination.exists() and previous.get("fingerprint") == fingerprint
-        manifest[item["id"]] = {
+        replacement = {
             "fingerprint": fingerprint,
             "name": item["name"],
             "localName": destination.name,
@@ -196,16 +219,17 @@ def sync_fitness_drive(
             "status": "available",
             "lastSeenAt": now,
         }
-        if unchanged:
-            continue
-        temporary = config.fitness_drive_cache / f".{item['id']}.part"
-        try:
-            reader.download(item["id"], temporary)
-            temporary.replace(destination)
-        finally:
-            temporary.unlink(missing_ok=True)
-        downloaded += 1
-        changed_files += 1
+        if not unchanged:
+            temporary = config.fitness_drive_cache / f".{item['id']}.part"
+            try:
+                reader.download(item["id"], temporary)
+                temporary.replace(destination)
+            finally:
+                temporary.unlink(missing_ok=True)
+            downloaded += 1
+            changed_files += 1
+        _remove_replaced_cache(config, previous.get("localName"), destination)
+        manifest[item["id"]] = replacement
     missing = 0
     requested_keys = {f"{year}-{month}" for year, month in requested}
     for file_id, entry in manifest.items():
