@@ -1,2 +1,10 @@
+fastapi<1,>=0.116
 google-api-python-client>=2.0
 google-auth-oauthlib>=1.0
+pydantic<3,>=2.11
+pyyaml<7,>=6
+uvicorn<1,>=0.35
+
+[dev]
+datamodel-code-generator<1,>=0.33
+httpx<1,>=0.28

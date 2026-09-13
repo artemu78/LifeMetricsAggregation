@@ -14,7 +14,7 @@ from zoneinfo import ZoneInfo
 
 from live_life.collectors import collect_rescuetime, collect_todoist
 from live_life.config import Config, ensure_layout, load_config
-from live_life.db import connect
+from live_life.db import connect, record_source_run, utc_now
 from live_life.diary_drive import sync_diary_drive
 from live_life.fitness_drive import sync_fitness_drive
 from live_life.importers import import_fitness_drive, import_inbox, import_welltory
@@ -269,6 +269,7 @@ def form_reports(
 
     today = today or datetime.now(ZoneInfo(config.timezone)).date()
     start = latest_report_day(config.reports)
+    run_started_at = utc_now()
     issues: list[str] = []
     source_status: dict[str, str] = {}
 
@@ -288,6 +289,28 @@ def form_reports(
         if on_source_finished is not None:
             latest = data_freshness(config)["sources"][source] if status is None else None
             on_source_finished(source, status or display_timestamp(latest))
+
+    def persist_run(source: str, day: date, *results: dict[str, Any], missing: bool = False):
+        """Persist source availability without copying source payloads."""
+        if any(result.get("error") for result in results):
+            status = "failed"
+        elif missing or any(
+            value
+            for result in results
+            for key, value in result.items()
+            if key.startswith("skipped_")
+        ):
+            status = "not_run"
+        else:
+            status = "success"
+        with connect(config.database) as conn:
+            record_source_run(
+                conn,
+                source=source,
+                logical_date=day.isoformat(),
+                status=status,
+                started_at=run_started_at,
+            )
 
     drive_sync = _source_result(
         "Fitness bracelet / Google Drive",
@@ -311,6 +334,8 @@ def form_reports(
     )
 
     source_finished(FITNESS_DRIVE_LABEL, drive_sync, drive_import)
+    for day in inclusive_days(start, today):
+        persist_run("bracelet", day, drive_sync, drive_import)
 
     welltory_paths = sorted(config.welltory_downloads.glob(config.welltory_pattern))
     if not welltory_paths:
@@ -322,6 +347,8 @@ def form_reports(
         "Welltory import", lambda: import_welltory(config, welltory_paths), issues
     )
     source_finished("Welltory", welltory, missing=not welltory_paths)
+    for day in inclusive_days(start, today):
+        persist_run("welltory", day, welltory, missing=not welltory_paths)
     inbox = _source_result("Local inbox import", lambda: import_inbox(config), issues)
 
     diary = _source_result("Diary / Google Drive", lambda: sync_diary_drive(config), issues)
@@ -361,6 +388,7 @@ def form_reports(
                 source_finished("RescueTime", rescuetime)
         else:
             rescuetime = {"skipped_after_source_failure": 1}
+        persist_run("rescuetime", day, rescuetime)
 
         if todoist_available:
             todoist = _source_result(
@@ -381,6 +409,7 @@ def form_reports(
                 source_finished("Todoist", todoist)
         else:
             todoist = {"skipped_after_source_failure": 1}
+        persist_run("todoist", day, todoist)
 
         days.append(
             {

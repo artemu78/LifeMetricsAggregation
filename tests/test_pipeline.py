@@ -625,7 +625,16 @@ class PipelineTest(unittest.TestCase):
         first = sync_fitness_drive(config, date(2026, 7, 18), date(2026, 7, 18), reader=FakeReader())
         second = sync_fitness_drive(config, date(2026, 7, 18), date(2026, 7, 18), reader=FakeReader())
 
-        self.assertEqual(first, {"files": 2, "downloaded": 2, "skipped_not_authorized": 0})
+        self.assertEqual(
+            first,
+            {
+                "files": 2,
+                "downloaded": 2,
+                "changed_files": 2,
+                "missing_files": 0,
+                "skipped_not_authorized": 0,
+            },
+        )
         self.assertEqual(second["downloaded"], 0)
 
     def test_imports_drive_schema_and_ignores_retired_csv(self):

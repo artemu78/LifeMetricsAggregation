@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from io import FileIO
 from pathlib import Path
 import json
@@ -148,7 +148,7 @@ def sync_fitness_drive(
         for item in reader.list_children(config.fitness_drive_folder_id)
         if item.get("mimeType") == FOLDER_MIME_TYPE
     }
-    remote_files: list[dict[str, str]] = []
+    remote_files: list[tuple[str, str, dict[str, str]]] = []
     for year, month in sorted(requested):
         year_item = years.get(year)
         if not year_item:
@@ -160,19 +160,43 @@ def sync_fitness_drive(
         }
         month_item = months.get(month)
         if month_item:
-            remote_files.extend(_walk_files(reader, month_item["id"]))
+            remote_files.extend((year, month, item) for item in _walk_files(reader, month_item["id"]))
 
     downloaded = 0
     manifest_path = config.fitness_drive_cache / ".drive-index.json"
     try:
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        raw_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     except (FileNotFoundError, json.JSONDecodeError):
-        manifest = {}
-    for item in remote_files:
+        raw_manifest = {}
+    if raw_manifest.get("version") == 2 and isinstance(raw_manifest.get("files"), dict):
+        manifest = raw_manifest["files"]
+    else:
+        manifest = {
+            file_id: {"fingerprint": fingerprint, "status": "available"}
+            for file_id, fingerprint in raw_manifest.items()
+            if isinstance(fingerprint, str)
+        }
+    now = datetime.now(timezone.utc).isoformat()
+    seen: set[str] = set()
+    changed_files = 0
+    for year, month, item in remote_files:
+        seen.add(item["id"])
         safe_name = SAFE_NAME.sub("_", item["name"])
         destination = config.fitness_drive_cache / f"{item['id']}--{safe_name}"
         fingerprint = item.get("md5Checksum") or item.get("modifiedTime") or "unknown"
-        if destination.exists() and manifest.get(item["id"]) == fingerprint:
+        previous = manifest.get(item["id"], {})
+        unchanged = destination.exists() and previous.get("fingerprint") == fingerprint
+        manifest[item["id"]] = {
+            "fingerprint": fingerprint,
+            "name": item["name"],
+            "localName": destination.name,
+            "modifiedTime": item.get("modifiedTime"),
+            "year": year,
+            "month": month,
+            "status": "available",
+            "lastSeenAt": now,
+        }
+        if unchanged:
             continue
         temporary = config.fitness_drive_cache / f".{item['id']}.part"
         try:
@@ -180,11 +204,23 @@ def sync_fitness_drive(
             temporary.replace(destination)
         finally:
             temporary.unlink(missing_ok=True)
-        manifest[item["id"]] = fingerprint
         downloaded += 1
-    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        changed_files += 1
+    missing = 0
+    requested_keys = {f"{year}-{month}" for year, month in requested}
+    for file_id, entry in manifest.items():
+        key = f"{entry.get('year')}-{entry.get('month')}"
+        if key in requested_keys and file_id not in seen:
+            entry["status"] = "missing_on_drive"
+            missing += 1
+    manifest_path.write_text(
+        json.dumps({"version": 2, "files": manifest}, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
     return {
         "files": len(remote_files),
         "downloaded": downloaded,
+        "changed_files": changed_files,
+        "missing_files": missing,
         "skipped_not_authorized": 0,
     }

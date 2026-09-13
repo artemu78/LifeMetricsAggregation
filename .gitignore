@@ -6,3 +6,8 @@ reports/
 __pycache__/
 *.pyc
 .DS_Store
+node_modules/
+web-dist/
+*.tsbuildinfo
+vite.config.js
+vite.config.d.ts
