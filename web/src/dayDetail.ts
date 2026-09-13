@@ -69,3 +69,42 @@ export function buildRescueTimeOverview(records: RescueTimeRecord[]) {
       .sort((left, right) => right.weight - left.weight),
   }
 }
+
+export type SourceIndicatorDay = {
+  bracelet: { sleepSeconds: number | null; steps: number | null }
+  welltory: { available: boolean }
+  todoist: { created: number; completed: number }
+  rescuetime: { available: boolean }
+  detail?: {
+    braceletMetrics?: unknown[]
+    welltoryMetrics?: unknown[]
+    createdTasks?: unknown[]
+    completedTasks?: unknown[]
+    rescueTime?: unknown[]
+  }
+}
+
+export function isSourceAvailable(
+  day: SourceIndicatorDay,
+  source: 'bracelet' | 'welltory' | 'todoist' | 'rescuetime',
+): boolean {
+  switch (source) {
+    case 'bracelet':
+      return (
+        day.bracelet.sleepSeconds != null ||
+        day.bracelet.steps != null ||
+        Boolean(day.detail?.braceletMetrics?.length)
+      )
+    case 'welltory':
+      return Boolean(day.welltory.available || day.detail?.welltoryMetrics?.length)
+    case 'todoist':
+      return (
+        day.todoist.created > 0 ||
+        day.todoist.completed > 0 ||
+        Boolean(day.detail?.createdTasks?.length || day.detail?.completedTasks?.length)
+      )
+    case 'rescuetime':
+      return Boolean(day.rescuetime.available || day.detail?.rescueTime?.length)
+  }
+}
+

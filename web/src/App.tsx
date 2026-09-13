@@ -40,6 +40,7 @@ import {
 import {
   buildRescueTimeOverview,
   formatRecordTime,
+  isSourceAvailable,
   PRODUCTIVITY_LABELS,
 } from './dayDetail'
 import { inclusiveDateCount } from './dashboardWindow'
@@ -159,10 +160,10 @@ const DashboardLegend = observer(function DashboardLegend() {
 
 function CalendarCell({ day }: { day: DashboardDay }) {
   const date = new Date(`${day.date}T12:00:00Z`)
-  const sourceAvailable = (source: string) => {
-    const status = day.sources.find((item) => item.source === source)?.status
-    return status === 'success' || status === 'partial'
-  }
+  const braceletAvailable = isSourceAvailable(day, 'bracelet')
+  const welltoryAvailable = isSourceAvailable(day, 'welltory')
+  const todoistAvailable = isSourceAvailable(day, 'todoist')
+  const rescuetimeAvailable = isSourceAvailable(day, 'rescuetime')
   return (
     <Link
       className={`day-card quality-${day.quality}`}
@@ -180,10 +181,10 @@ function CalendarCell({ day }: { day: DashboardDay }) {
         <div><span><CheckCircle2 aria-hidden="true" />Закрыто</span><b>{day.todoist.completed}</b></div>
       </div>
       <div className="indicators" aria-label="Источники">
-        <span className={sourceAvailable('bracelet') ? 'on' : ''} title="Браслет" aria-label={`Браслет: ${sourceAvailable('bracelet') ? 'данные доступны' : 'нет данных'}`}><Watch aria-hidden="true" /></span>
-        <span className={sourceAvailable('welltory') ? 'on' : ''} title="Welltory" aria-label={`Welltory: ${sourceAvailable('welltory') ? 'данные доступны' : 'нет данных'}`}><HeartPulse aria-hidden="true" /></span>
-        <span className={sourceAvailable('todoist') ? 'on' : ''} title="Todoist" aria-label={`Todoist: ${sourceAvailable('todoist') ? 'данные доступны' : 'нет данных'}`}><ListTodo aria-hidden="true" /></span>
-        <span className={sourceAvailable('rescuetime') ? 'on' : ''} title="RescueTime" aria-label={`RescueTime: ${sourceAvailable('rescuetime') ? 'данные доступны' : 'нет данных'}`}><ChartNoAxesCombined aria-hidden="true" /></span>
+        <span className={braceletAvailable ? 'on' : ''} title="Браслет" aria-label={`Браслет: ${braceletAvailable ? 'данные доступны' : 'нет данных'}`}><Watch aria-hidden="true" /></span>
+        <span className={welltoryAvailable ? 'on' : ''} title="Welltory" aria-label={`Welltory: ${welltoryAvailable ? 'данные доступны' : 'нет данных'}`}><HeartPulse aria-hidden="true" /></span>
+        <span className={todoistAvailable ? 'on' : ''} title="Todoist" aria-label={`Todoist: ${todoistAvailable ? 'данные доступны' : 'нет данных'}`}><ListTodo aria-hidden="true" /></span>
+        <span className={rescuetimeAvailable ? 'on' : ''} title="RescueTime" aria-label={`RescueTime: ${rescuetimeAvailable ? 'данные доступны' : 'нет данных'}`}><ChartNoAxesCombined aria-hidden="true" /></span>
       </div>
     </Link>
   )
