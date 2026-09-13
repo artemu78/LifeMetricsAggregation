@@ -237,10 +237,15 @@ def sync_fitness_drive(
         if key in requested_keys and file_id not in seen:
             entry["status"] = "missing_on_drive"
             missing += 1
-    manifest_path.write_text(
-        json.dumps({"version": 2, "files": manifest}, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
+    manifest_document = json.dumps(
+        {"version": 2, "files": manifest}, indent=2, sort_keys=True
+    ) + "\n"
+    temporary_manifest = manifest_path.with_name(f"{manifest_path.name}.tmp")
+    try:
+        temporary_manifest.write_text(manifest_document, encoding="utf-8")
+        temporary_manifest.replace(manifest_path)
+    finally:
+        temporary_manifest.unlink(missing_ok=True)
     return {
         "files": len(remote_files),
         "downloaded": downloaded,

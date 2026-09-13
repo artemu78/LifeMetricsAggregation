@@ -716,6 +716,44 @@ class PipelineTest(unittest.TestCase):
                 str(new_path),
             )
 
+    def test_sync_manifest_write_failure_preserves_previous_document(self):
+        """Verify an interrupted manifest write keeps the previous JSON intact."""
+        cache = self.config.root / "data/inbox/fitness_drive"
+        config = replace(
+            self.config,
+            fitness_drive_folder_id="root",
+            fitness_drive_cache=cache,
+        )
+        cache.mkdir(parents=True)
+        manifest_path = cache / ".drive-index.json"
+        previous = '{"version": 2, "files": {}}\n'
+        manifest_path.write_text(previous, encoding="utf-8")
+
+        class EmptyReader:
+            def list_children(self, folder_id):
+                """Return no Drive items."""
+                return []
+
+        original_write_text = Path.write_text
+
+        def interrupted_write(path, data, *args, **kwargs):
+            if path.parent == cache and path.name.startswith(".drive-index.json"):
+                original_write_text(path, '{"partial":', encoding="utf-8")
+                raise OSError("simulated interrupted manifest write")
+            return original_write_text(path, data, *args, **kwargs)
+
+        with patch.object(Path, "write_text", new=interrupted_write):
+            with self.assertRaisesRegex(OSError, "simulated interrupted"):
+                sync_fitness_drive(
+                    config,
+                    date(2026, 7, 18),
+                    date(2026, 7, 18),
+                    reader=EmptyReader(),
+                )
+
+        self.assertEqual(manifest_path.read_text(encoding="utf-8"), previous)
+        self.assertEqual(list(cache.glob(".drive-index.json.*")), [])
+
     def test_imports_drive_schema_and_ignores_retired_csv(self):
         """Verify imports drive schema and ignores retired csv."""
         cache = self.config.root / "data/inbox/fitness_drive"
