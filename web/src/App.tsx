@@ -34,6 +34,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
+import { inclusiveDateCount } from './dashboardWindow'
 import { dashboardStore as store, type DashboardDay, type DashboardResponse } from './store'
 
 const WEEKDAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
@@ -49,6 +50,12 @@ const QUALITY: Record<string, string> = {
   not_run: 'Сбор данных не запускался',
   in_progress: 'Текущий логический день ещё продолжается',
 }
+const SOURCE_ICONS = [
+  { name: 'Браслет', description: 'Сон, шаги и другие измерения браслета', Icon: Watch },
+  { name: 'Welltory', description: 'Измерения Welltory', Icon: HeartPulse },
+  { name: 'Todoist', description: 'Созданные и завершённые задачи', Icon: ListTodo },
+  { name: 'RescueTime', description: 'Активность и продуктивность', Icon: ChartNoAxesCombined },
+]
 
 function hours(seconds: number | null) {
   return seconds == null ? '—' : `${(seconds / 3600).toFixed(1)} ч`
@@ -58,6 +65,68 @@ function monthLabel(date: string) {
   const label = MONTH_FORMAT.format(new Date(`${date.slice(0, 7)}-01T12:00:00Z`))
   return label.charAt(0).toUpperCase() + label.slice(1)
 }
+
+const DashboardLegend = observer(function DashboardLegend() {
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!store.helpOpen) return
+
+    const closeOnOutsideClick = (event: PointerEvent) => {
+      if (!containerRef.current?.contains(event.target as Node)) store.closeHelp()
+    }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') store.closeHelp()
+    }
+
+    document.addEventListener('pointerdown', closeOnOutsideClick)
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutsideClick)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [store.helpOpen])
+
+  return (
+    <div className="help-container" ref={containerRef}>
+      <button
+        className="help-button"
+        onClick={() => store.toggleHelp()}
+        aria-label="Легенда качества и источников"
+        aria-expanded={store.helpOpen}
+        aria-controls="dashboard-legend"
+      >
+        <CircleHelp aria-hidden="true" />
+      </button>
+      {store.helpOpen && (
+        <aside className="legend" id="dashboard-legend" aria-labelledby="legend-title">
+          <div className="legend-header">
+            <h2 id="legend-title">Легенда</h2>
+            <button className="legend-close" onClick={() => store.closeHelp()} aria-label="Закрыть легенду">
+              <X aria-hidden="true" />
+            </button>
+          </div>
+          <section aria-labelledby="quality-legend-title">
+            <h3 id="quality-legend-title">Цвет карточки</h3>
+            {Object.entries(QUALITY).map(([key, label]) => (
+              <p key={key}><i className={`legend-dot quality-${key}`} />{label}</p>
+            ))}
+          </section>
+          <section className="source-legend" aria-labelledby="source-legend-title">
+            <h3 id="source-legend-title">Иконки источников</h3>
+            {SOURCE_ICONS.map(({ name, description, Icon }) => (
+              <p key={name}>
+                <i className="legend-source-icon"><Icon aria-hidden="true" /></i>
+                <span><strong>{name}</strong><small>{description}</small></span>
+              </p>
+            ))}
+            <p className="legend-note">Зелёная иконка — данные источника доступны; серая — недоступны.</p>
+          </section>
+        </aside>
+      )}
+    </div>
+  )
+})
 
 function CalendarCell({ day }: { day: DashboardDay }) {
   const date = new Date(`${day.date}T12:00:00Z`)
@@ -313,27 +382,22 @@ const Dashboard = observer(function Dashboard() {
     else groups.push({ key, days: [day] })
     return groups
   }, [])
+  const displayedDayCount = store.dashboard?.days.length
+    ?? inclusiveDateCount(store.from, store.to)
   return (
     <main className={dayMatch ? 'app blurred' : 'app'}>
       <header className="topbar">
         <div>
           <p className="eyebrow">Локальный обзор</p>
           <h1>Live Life</h1>
-          <p className="subtitle">30 дней · {store.from} — {store.to}</p>
+          <p className="subtitle">Дней: {displayedDayCount} · {store.from} — {store.to}</p>
         </div>
         <div className="actions">
           <button className="sync-button" onClick={() => void store.syncBracelet()} disabled={store.syncing}>
             <RefreshCw className={store.syncing ? 'spinning' : undefined} aria-hidden="true" />
             {store.syncing ? 'Обновляем…' : 'Обновить браслет'}
           </button>
-          <button className="help-button" onClick={() => store.toggleHelp()} aria-label="Легенда качества"><CircleHelp aria-hidden="true" /></button>
-          {store.helpOpen && (
-            <div className="legend">
-              {Object.entries(QUALITY).map(([key, label]) => (
-                <p key={key}><i className={`legend-dot quality-${key}`} />{label}</p>
-              ))}
-            </div>
-          )}
+          <DashboardLegend />
         </div>
       </header>
 

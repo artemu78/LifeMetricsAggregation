@@ -143,7 +143,8 @@ This is a self-observation tool, not a medical diagnosis system.
 
 ## Local dashboard
 
-The private dashboard shows the 30 Moscow dates ending today in a calendar.
+The private dashboard shows at least 28 Moscow dates ending today in a calendar,
+with the displayed range always starting on a Monday.
 It reads Bracelet, Welltory, Todoist, and RescueTime data from the local
 database. Diary content is never selected by the dashboard API. The server
 binds only to `127.0.0.1`.

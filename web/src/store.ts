@@ -1,21 +1,10 @@
 import { makeAutoObservable, runInAction } from 'mobx'
 import type { components } from './generated/api-types'
+import { defaultDashboardWindow } from './dashboardWindow'
 
 export type DashboardResponse = components['schemas']['DashboardResponse']
 export type DashboardDay = components['schemas']['DashboardDay']
 export type DateRange = components['schemas']['DateRange']
-
-function moscowDate(offsetDays = 0): string {
-  const today = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Europe/Moscow',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(new Date())
-  const shifted = new Date(`${today}T12:00:00Z`)
-  shifted.setUTCDate(shifted.getUTCDate() + offsetDays)
-  return shifted.toISOString().slice(0, 10)
-}
 
 async function errorMessage(response: Response): Promise<string> {
   try {
@@ -27,8 +16,8 @@ async function errorMessage(response: Response): Promise<string> {
 }
 
 export class DashboardStore {
-  from = moscowDate(-29)
-  to = moscowDate()
+  from: string
+  to: string
   dashboard: DashboardResponse | null = null
   loading = false
   syncing = false
@@ -37,6 +26,9 @@ export class DashboardStore {
   syncMessage: string | null = null
 
   constructor() {
+    const window = defaultDashboardWindow()
+    this.from = window.from
+    this.to = window.to
     makeAutoObservable(this)
   }
 
@@ -92,6 +84,10 @@ export class DashboardStore {
 
   toggleHelp() {
     this.helpOpen = !this.helpOpen
+  }
+
+  closeHelp() {
+    this.helpOpen = false
   }
 }
 

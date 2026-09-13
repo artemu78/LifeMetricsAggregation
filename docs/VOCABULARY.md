@@ -13,7 +13,7 @@ The current Moscow calendar date marked as in progress in the dashboard, even wh
 _Avoid_: Current logical day, complete day
 
 **Dashboard window**:
-The 30 consecutive Moscow dates ending on the current dashboard day and displayed in the calendar.
+The consecutive Moscow dates ending on the current dashboard day and displayed in the calendar. It starts on the latest Monday that keeps at least 28 dates in the inclusive range.
 _Avoid_: Calendar month, reporting month
 
 ## Sources and provenance

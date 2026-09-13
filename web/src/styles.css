@@ -35,7 +35,8 @@ h1, h2, h3, h4, p { margin-top: 0; }
 h1 { margin-bottom: 4px; font-size: clamp(2rem, 4vw, 3.5rem); letter-spacing: -0.04em; }
 .eyebrow { margin-bottom: 5px; color: #55766b; font-size: .75rem; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
 .subtitle, .muted { color: #6d827b; }
-.actions { position: relative; display: flex; gap: 10px; }
+.actions { display: flex; gap: 10px; }
+.help-container { position: relative; }
 .sync-button, .help-button, .icon-button {
   border: 0;
   cursor: pointer;
@@ -54,16 +55,48 @@ h1 { margin-bottom: 4px; font-size: clamp(2rem, 4vw, 3.5rem); letter-spacing: -0
   position: absolute;
   z-index: 5;
   right: 0;
-  top: 4px;
-  width: min(360px, calc(100vw - 36px));
-  padding: 58px 18px 12px;
+  top: 54px;
+  width: min(390px, calc(100vw - 36px));
+  padding: 18px;
   border: 1px solid #d6e2dc;
   border-radius: 18px;
   background: rgba(255, 255, 255, .97);
   box-shadow: 0 20px 60px rgba(24, 53, 44, .2);
 }
+.legend-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.legend h2 { margin-bottom: 0; font-size: 1.15rem; }
+.legend h3 { margin: 18px 0 10px; color: #55766b; font-size: .75rem; letter-spacing: .08em; text-transform: uppercase; }
+.legend-close {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: #edf3ef;
+  color: #245c4b;
+  cursor: pointer;
+}
+.legend-close:hover { background: #dfeae4; }
+.legend-close svg { width: 17px; height: 17px; }
 .legend p { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; font-size: .85rem; }
 .legend-dot { width: 12px; height: 12px; border-radius: 50%; flex: 0 0 auto; }
+.source-legend { margin-top: 16px; border-top: 1px solid #e0e9e4; }
+.legend-source-icon {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  border-radius: 8px;
+  background: #4c7f6d;
+  color: white;
+}
+.legend-source-icon svg { width: 15px; height: 15px; }
+.legend-source-icon + span { display: grid; gap: 1px; }
+.legend-source-icon small { color: #6d827b; font-size: .75rem; }
+.legend .legend-note { display: block; margin: 14px 0 2px; color: #6d827b; font-size: .75rem; line-height: 1.4; }
 
 .calendar-months {
   display: grid;

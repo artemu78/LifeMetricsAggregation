@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "test": "node --test web/test/*.test.mjs",
     "generate:types": "openapi-typescript openapi.yaml -o web/src/generated/api-types.ts",
     "check:types": "npm run generate:types && git diff --exit-code -- web/src/generated/api-types.ts"
   },
