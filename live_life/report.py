@@ -8,6 +8,7 @@ from .collectors import logical_window
 from .config import Config
 from .db import connect
 from .sleep import format_sleep_duration, main_sleep_by_wake_date, sleep_seconds
+from .steps import step_total, steps_by_calendar_date
 
 
 KEY_METRICS = [
@@ -84,14 +85,10 @@ def generate_report(config: Config, day: date) -> Path:
             lines.append("- No Welltory measurements imported for this day.")
 
         lines.extend(["", "## Fitness tracker (Google Drive)", ""])
-        steps = conn.execute(
-            """
-            SELECT SUM(value_num) AS total FROM metric_events
-            WHERE source = 'fitness_drive' AND metric = 'fitness_drive.steps'
-                  AND occurred_at >= ? AND occurred_at < ?
-            """,
-            (start_utc, end_utc),
-        ).fetchone()["total"]
+        step_points = steps_by_calendar_date(conn, day, day, config.timezone).get(
+            day.isoformat(), []
+        )
+        steps = step_total(step_points) if step_points else None
         heart_rate = conn.execute(
             """
             SELECT AVG(value_num) AS avg_value, MIN(value_num) AS min_value,

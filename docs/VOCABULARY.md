@@ -5,8 +5,16 @@ Use these canonical terms when discussing the domain, naming user-visible concep
 ## Time and scope
 
 **Logical day**:
-A reporting interval for work, tasks, activity, and other non-sleep measurements from 05:00 inclusive until 05:00 exclusive on the following calendar date in Europe/Moscow. Bracelet sleep follows its sleep wake date instead.
+A reporting interval for work, tasks, activity, and other effort-related measurements from 05:00 inclusive until 05:00 exclusive on the following calendar date in Europe/Moscow. Bracelet sleep and steps use their own attribution rules instead.
 _Avoid_: Calendar day, midnight day
+
+**Step calendar date**:
+The Europe/Moscow calendar date on which a Bracelet step interval starts. All canonical intervals starting from 00:00 inclusive until 00:00 exclusive on the next date contribute to that date's step total.
+_Avoid_: Step logical day, effort date
+
+**Canonical step interval**:
+The latest Bracelet export revision for one data origin and step interval. When overlapping exports contain different counts for the same interval, only the revision from the most recently modified export contributes to the total.
+_Avoid_: All step records, duplicate interval
 
 **Sleep wake date**:
 The Europe/Moscow calendar date on which the main sleep session ends. The complete session belongs to this date even when it starts before the logical-day boundary.

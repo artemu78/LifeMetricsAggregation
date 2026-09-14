@@ -249,6 +249,65 @@ class DashboardTest(unittest.TestCase):
             [(500.0, str(unchanged.resolve()))],
         )
 
+    def test_steps_use_calendar_date_and_latest_interval_revision(self):
+        records_by_file = {
+            "a-old.json": {
+                "recordType": "steps",
+                "origin": "com.xiaomi.wearable",
+                "startTime": "2026-09-12T21:00:00Z",
+                "endTime": "2026-09-12T21:29:59Z",
+                "count": 18,
+            },
+            "b-new.json": {
+                "recordType": "steps",
+                "origin": "com.xiaomi.wearable",
+                "startTime": "2026-09-12T21:00:00Z",
+                "endTime": "2026-09-12T21:29:59Z",
+                "count": 34,
+            },
+            "c-daytime.json": {
+                "recordType": "steps",
+                "origin": "com.xiaomi.wearable",
+                "startTime": "2026-09-13T07:00:00Z",
+                "endTime": "2026-09-13T07:29:59Z",
+                "count": 200,
+            },
+            "d-next-day.json": {
+                "recordType": "steps",
+                "origin": "com.xiaomi.wearable",
+                "startTime": "2026-09-13T22:00:00Z",
+                "endTime": "2026-09-13T22:29:59Z",
+                "count": 300,
+            },
+        }
+        manifest = {"version": 2, "files": {}}
+        for index, (name, record) in enumerate(records_by_file.items(), start=1):
+            (self.cache / name).write_text(
+                json.dumps({
+                    "header": {"schemaVersion": 1, "recordCount": 1},
+                    "records": [record],
+                }),
+                encoding="utf-8",
+            )
+            manifest["files"][f"drive-{index}"] = {
+                "localName": name,
+                "name": name,
+                "modifiedTime": f"2026-09-{10 + index:02d}T12:00:00Z",
+                "status": "available",
+            }
+        (self.cache / ".drive-index.json").write_text(json.dumps(manifest), encoding="utf-8")
+        import_fitness_drive(self.config)
+
+        dashboard = build_dashboard(self.config, date(2026, 9, 13), date(2026, 9, 13))
+        day = dashboard["days"][0]
+
+        self.assertEqual(day["bracelet"]["steps"], 234)
+        step_points = [
+            point for point in day["detail"]["braceletMetrics"]
+            if point["metric"] == "fitness_drive.steps"
+        ]
+        self.assertEqual([point["value"] for point in step_points], [34, 200])
+
     def test_sleep_uses_longest_session_on_wake_date_instead_of_logical_boundary(self):
         main_sleep = {
             "recordType": "sleep_session",
