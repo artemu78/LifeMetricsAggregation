@@ -31,6 +31,7 @@ test('record timestamps are formatted in the dashboard timezone', () => {
 test('sleep duration is formatted as zero-padded hours and minutes', () => {
   assert.equal(formatSleepDuration(8 * 3600 + 30 * 60), '08:30')
   assert.equal(formatSleepDuration(45 * 60), '00:45')
+  assert.equal(formatSleepDuration(150), '00:03')
   assert.equal(formatSleepDuration(null), '—')
 })
 

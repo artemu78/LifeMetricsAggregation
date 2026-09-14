@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 from datetime import date, datetime
 import json
+from math import floor
 from zoneinfo import ZoneInfo
 
 
@@ -81,6 +82,6 @@ def sleep_seconds(points: list[dict]) -> float:
 
 def format_sleep_duration(seconds: float) -> str:
     """Format a sleep duration as zero-padded hours and minutes."""
-    total_minutes = round(seconds / 60)
+    total_minutes = floor(seconds / 60 + 0.5)
     hours, minutes = divmod(total_minutes, 60)
     return f"{hours:02d}:{minutes:02d}"

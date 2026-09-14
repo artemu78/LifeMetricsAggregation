@@ -215,6 +215,40 @@ class DashboardTest(unittest.TestCase):
         # Total sleep should be 14400s (4h), excluding the 1800s (0.5h) awake time
         self.assertEqual(dashboard["days"][0]["bracelet"]["sleepSeconds"], 14400.0)
 
+    def test_changed_duplicate_owner_preserves_unchanged_file_projection(self):
+        shared_record = {
+            "recordType": "steps",
+            "origin": "com.xiaomi.wearable",
+            "startTime": "2026-09-11T10:00:00Z",
+            "endTime": "2026-09-11T10:30:00Z",
+            "count": 500,
+        }
+        duplicate_document = {
+            "header": {"schemaVersion": 1, "recordCount": 1},
+            "records": [shared_record],
+        }
+        owner = self.cache / "a-owner.json"
+        unchanged = self.cache / "b-unchanged.json"
+        owner.write_text(json.dumps(duplicate_document), encoding="utf-8")
+        unchanged.write_text(json.dumps(duplicate_document), encoding="utf-8")
+
+        import_fitness_drive(self.config)
+        owner.write_text(
+            json.dumps({"header": {"schemaVersion": 1, "recordCount": 0}, "records": []}),
+            encoding="utf-8",
+        )
+        import_fitness_drive(self.config)
+
+        with connect(self.config.database) as conn:
+            rows = conn.execute(
+                "SELECT value_num, origin_file FROM metric_events "
+                "WHERE source = 'fitness_drive' AND metric = 'fitness_drive.steps'"
+            ).fetchall()
+        self.assertEqual(
+            [(row["value_num"], row["origin_file"]) for row in rows],
+            [(500.0, str(unchanged.resolve()))],
+        )
+
     def test_sleep_uses_longest_session_on_wake_date_instead_of_logical_boundary(self):
         main_sleep = {
             "recordType": "sleep_session",
