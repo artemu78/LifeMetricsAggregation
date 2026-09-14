@@ -4,6 +4,7 @@ import test from 'node:test'
 import {
   buildRescueTimeOverview,
   formatRecordTime,
+  formatSleepDuration,
   isSourceAvailable,
 } from '../src/dayDetail.ts'
 
@@ -25,6 +26,12 @@ test('RescueTime overview totals activity without double-counting productivity',
 
 test('record timestamps are formatted in the dashboard timezone', () => {
   assert.equal(formatRecordTime('2026-09-12T21:30:00Z', 'Europe/Moscow'), '00:30')
+})
+
+test('sleep duration is formatted as zero-padded hours and minutes', () => {
+  assert.equal(formatSleepDuration(8 * 3600 + 30 * 60), '08:30')
+  assert.equal(formatSleepDuration(45 * 60), '00:45')
+  assert.equal(formatSleepDuration(null), '—')
 })
 
 test('isSourceAvailable evaluates availability from response and payload rather than run status', () => {
@@ -68,4 +75,3 @@ test('isSourceAvailable detects Todoist availability from completed tasks or det
   }
   assert.equal(isSourceAvailable(dayWithDetail, 'todoist'), true)
 })
-

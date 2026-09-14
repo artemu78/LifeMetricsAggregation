@@ -5,8 +5,16 @@ Use these canonical terms when discussing the domain, naming user-visible concep
 ## Time and scope
 
 **Logical day**:
-A reporting interval from 05:00 inclusive until 05:00 exclusive on the following calendar date in Europe/Moscow.
+A reporting interval for work, tasks, activity, and other non-sleep measurements from 05:00 inclusive until 05:00 exclusive on the following calendar date in Europe/Moscow. Bracelet sleep follows its sleep wake date instead.
 _Avoid_: Calendar day, midnight day
+
+**Sleep wake date**:
+The Europe/Moscow calendar date on which the main sleep session ends. The complete session belongs to this date even when it starts before the logical-day boundary.
+_Avoid_: Sleep logical day, stage date
+
+**Main sleep session**:
+The longest Bracelet sleep session ending on a sleep wake date. Its duration is the sum of non-awake stages; shorter sessions on the same date are treated as naps.
+_Avoid_: All daily sleep, logical-day sleep
 
 **Current dashboard day**:
 The current Moscow calendar date marked as in progress in the dashboard, even when some sources have already run.

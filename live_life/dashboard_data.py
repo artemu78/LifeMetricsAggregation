@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 from .collectors import logical_window
 from .config import Config
 from .db import connect
+from .sleep import main_sleep_by_wake_date, sleep_seconds
 
 
 SOURCES = ("bracelet", "welltory", "todoist", "rescuetime")
@@ -61,6 +62,7 @@ def build_dashboard(config: Config, start: date, end: date) -> dict:
             FROM metric_events
             WHERE occurred_at >= ? AND occurred_at < ?
               AND source IN ('fitness_drive', 'welltory', 'rescuetime')
+              AND metric NOT LIKE 'fitness_drive.sleep.%_seconds'
               AND value_num IS NOT NULL
             ORDER BY occurred_at
             """,
@@ -75,6 +77,8 @@ def build_dashboard(config: Config, start: date, end: date) -> dict:
                     "unit": row["unit"],
                 }
             )
+        for wake_date, points in main_sleep_by_wake_date(conn, start, end, config.timezone).items():
+            metrics[wake_date]["fitness_drive"].extend(points)
         for row in conn.execute(
             """
             SELECT content, created_at FROM created_tasks
@@ -145,10 +149,11 @@ def build_dashboard(config: Config, start: date, end: date) -> dict:
                 }
             source_items.append({"source": source, **status})
 
-        sleep_seconds = sum(
-            point["value"] for point in bracelet_metrics
+        selected_sleep = [
+            point for point in bracelet_metrics
             if point["metric"].startswith("fitness_drive.sleep.")
-        )
+        ]
+        selected_sleep_seconds = sleep_seconds(selected_sleep)
         step_values = [
             point["value"] for point in bracelet_metrics
             if point["metric"] == "fitness_drive.steps"
@@ -164,7 +169,7 @@ def build_dashboard(config: Config, start: date, end: date) -> dict:
                 ),
                 "sources": source_items,
                 "bracelet": {
-                    "sleepSeconds": sleep_seconds if sleep_seconds else None,
+                    "sleepSeconds": selected_sleep_seconds if selected_sleep_seconds else None,
                     "steps": sum(step_values) if step_values else None,
                 },
                 "welltory": {

@@ -7,6 +7,7 @@ import sqlite3
 from .collectors import logical_window
 from .config import Config
 from .db import connect
+from .sleep import format_sleep_duration, main_sleep_by_wake_date, sleep_seconds
 
 
 KEY_METRICS = [
@@ -101,14 +102,10 @@ def generate_report(config: Config, day: date) -> Path:
             """,
             (start_utc, end_utc),
         ).fetchone()
-        sleep = conn.execute(
-            """
-            SELECT SUM(value_num) AS seconds FROM metric_events
-            WHERE source = 'fitness_drive' AND metric LIKE 'fitness_drive.sleep.%_seconds'
-                  AND occurred_at >= ? AND occurred_at < ?
-            """,
-            (start_utc, end_utc),
-        ).fetchone()["seconds"]
+        sleep_points = main_sleep_by_wake_date(conn, day, day, config.timezone).get(
+            day.isoformat(), []
+        )
+        sleep = sleep_seconds(sleep_points) if sleep_points else None
         if steps is not None:
             lines.append(f"- Steps: {_format_number(steps)}")
         if heart_rate["samples"]:
@@ -118,7 +115,7 @@ def generate_report(config: Config, day: date) -> Path:
                 f"{heart_rate['samples']} samples)"
             )
         if sleep is not None:
-            lines.append(f"- Sleep stages recorded: {sleep / 3600:.2f} h")
+            lines.append(f"- Sleep duration: {format_sleep_duration(sleep)}")
         if steps is None and not heart_rate["samples"] and sleep is None:
             lines.append("- No Google Drive fitness export imported for this day.")
 

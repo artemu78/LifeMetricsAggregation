@@ -808,7 +808,8 @@ class PipelineTest(unittest.TestCase):
         self.assertIn("Steps: 1250", report)
         self.assertNotIn("2249", report)
         self.assertIn("Heart rate: avg 75 bpm", report)
-        self.assertIn("Sleep stages recorded: 2.00 h", previous_report)
+        self.assertIn("Sleep duration: 02:00", report)
+        self.assertNotIn("Sleep duration:", previous_report)
 
 
 if __name__ == "__main__":
