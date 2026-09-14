@@ -231,11 +231,16 @@ def import_fitness_drive(config: Config) -> dict[str, object]:
             """
         ).fetchone()["count"]
 
-    rebuild = legacy_rows > 0
-    selected = paths if rebuild else [
+    changed_paths = paths if legacy_rows > 0 else [
         path for path in paths
         if previous_hashes.get(path.resolve()) != path_hashes[path.resolve()]
     ]
+    # A metric can be supplied by more than one overlapping export while the
+    # database stores only one origin_file. Reconcile every cached export when
+    # anything changes so deleting the row owned by one file cannot hide an
+    # identical row still supplied by an unchanged file.
+    rebuild = legacy_rows > 0 or bool(changed_paths)
+    selected = paths if rebuild else []
 
     staged: dict[Path, list[tuple[str, str, str, float, str, dict]]] = {}
     records = 0
@@ -256,7 +261,7 @@ def import_fitness_drive(config: Config) -> dict[str, object]:
                 raise ValueError(f"Fitness record count mismatch: {path.name}")
             for record in document_records:
                 records += 1
-                record_key = sha256(
+                record_id = record.get("recordId") or sha256(
                     json.dumps(record, sort_keys=True).encode("utf-8")
                 ).hexdigest()
                 for index, (occurred_at, metric, value, unit) in enumerate(
@@ -269,7 +274,7 @@ def import_fitness_drive(config: Config) -> dict[str, object]:
                     ).date().isoformat()
                     affected_dates.add(logical_date)
                     staged_rows.append(
-                        (f"{remote_id}:{record_key}:{index}", normalized, metric, value, unit, record)
+                        (f"{record.get('recordType', 'fitness')}:{record_id}:{index}", normalized, metric, value, unit, record)
                     )
         staged[path.resolve()] = staged_rows
 

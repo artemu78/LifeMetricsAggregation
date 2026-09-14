@@ -179,6 +179,119 @@ class DashboardTest(unittest.TestCase):
         self.assertNotIn("/private/path", encoded)
         self.assertEqual(result["days"][0]["quality"], "complete")
 
+    def test_overlapping_fitness_files_deduplicate_and_exclude_awake_seconds(self):
+        file1 = self.cache / "sync-file-1.json"
+        file2 = self.cache / "backfill-file-2.json"
+        payload = {
+            "header": {"schemaVersion": 1, "recordCount": 1},
+            "records": [
+                {
+                    "recordType": "sleep_session",
+                    "origin": "com.xiaomi.wearable",
+                    "startTime": "2026-09-11T00:00:00Z",
+                    "endTime": "2026-09-11T07:00:00Z",
+                    "stages": [
+                        {"startTime": "2026-09-11T02:00:00Z", "endTime": "2026-09-11T06:00:00Z", "stage": 4},
+                        {"startTime": "2026-09-11T06:00:00Z", "endTime": "2026-09-11T06:30:00Z", "stage": 1},
+                    ],
+                }
+            ],
+        }
+        file1.write_text(json.dumps(payload), encoding="utf-8")
+        file2.write_text(json.dumps(payload), encoding="utf-8")
+
+        result = import_fitness_drive(self.config)
+        self.assertEqual(result["files"], 2)
+        with connect(self.config.database) as conn:
+            rows = conn.execute(
+                "SELECT metric, value_num FROM metric_events WHERE source = 'fitness_drive'"
+            ).fetchall()
+            self.assertEqual(len(rows), 2)
+            metrics = {row["metric"]: row["value_num"] for row in rows}
+            self.assertEqual(metrics["fitness_drive.sleep.light_seconds"], 14400.0)
+            self.assertEqual(metrics["fitness_drive.sleep.awake_seconds"], 1800.0)
+
+        dashboard = build_dashboard(self.config, date(2026, 9, 11), date(2026, 9, 11))
+        # Total sleep should be 14400s (4h), excluding the 1800s (0.5h) awake time
+        self.assertEqual(dashboard["days"][0]["bracelet"]["sleepSeconds"], 14400.0)
+
+    def test_changed_duplicate_owner_preserves_unchanged_file_projection(self):
+        shared_record = {
+            "recordType": "steps",
+            "origin": "com.xiaomi.wearable",
+            "startTime": "2026-09-11T10:00:00Z",
+            "endTime": "2026-09-11T10:30:00Z",
+            "count": 500,
+        }
+        duplicate_document = {
+            "header": {"schemaVersion": 1, "recordCount": 1},
+            "records": [shared_record],
+        }
+        owner = self.cache / "a-owner.json"
+        unchanged = self.cache / "b-unchanged.json"
+        owner.write_text(json.dumps(duplicate_document), encoding="utf-8")
+        unchanged.write_text(json.dumps(duplicate_document), encoding="utf-8")
+
+        import_fitness_drive(self.config)
+        owner.write_text(
+            json.dumps({"header": {"schemaVersion": 1, "recordCount": 0}, "records": []}),
+            encoding="utf-8",
+        )
+        import_fitness_drive(self.config)
+
+        with connect(self.config.database) as conn:
+            rows = conn.execute(
+                "SELECT value_num, origin_file FROM metric_events "
+                "WHERE source = 'fitness_drive' AND metric = 'fitness_drive.steps'"
+            ).fetchall()
+        self.assertEqual(
+            [(row["value_num"], row["origin_file"]) for row in rows],
+            [(500.0, str(unchanged.resolve()))],
+        )
+
+    def test_sleep_uses_longest_session_on_wake_date_instead_of_logical_boundary(self):
+        main_sleep = {
+            "recordType": "sleep_session",
+            "origin": "com.xiaomi.wearable",
+            "startTime": "2026-09-13T22:00:00Z",
+            "endTime": "2026-09-14T05:37:00Z",
+        }
+        nap = {
+            "recordType": "sleep_session",
+            "origin": "com.xiaomi.wearable",
+            "startTime": "2026-09-14T12:00:00Z",
+            "endTime": "2026-09-14T14:00:00Z",
+        }
+        with connect(self.config.database) as conn:
+            for external_id, occurred_at, metric, seconds, payload in (
+                ("main-deep", "2026-09-13T22:00:00+00:00", "fitness_drive.sleep.deep_seconds", 4 * 3600, main_sleep),
+                ("main-awake", "2026-09-14T02:00:00+00:00", "fitness_drive.sleep.awake_seconds", 30 * 60, main_sleep),
+                ("main-light", "2026-09-14T02:30:00+00:00", "fitness_drive.sleep.light_seconds", 3 * 3600 + 7 * 60, main_sleep),
+                ("nap", "2026-09-14T12:00:00+00:00", "fitness_drive.sleep.sleeping_seconds", 2 * 3600, nap),
+            ):
+                insert_metric(
+                    conn,
+                    source="fitness_drive",
+                    external_id=external_id,
+                    occurred_at=occurred_at,
+                    metric=metric,
+                    value_num=seconds,
+                    value_text=None,
+                    unit="s",
+                    payload=payload,
+                )
+
+        dashboard = build_dashboard(self.config, date(2026, 9, 14), date(2026, 9, 14))
+        day = dashboard["days"][0]
+
+        self.assertEqual(day["bracelet"]["sleepSeconds"], 7 * 3600 + 7 * 60)
+        sleep_detail = [
+            point for point in day["detail"]["braceletMetrics"]
+            if point["metric"].startswith("fitness_drive.sleep.")
+        ]
+        self.assertEqual(len(sleep_detail), 3)
+        self.assertNotIn("2026-09-14T12:00:00+00:00", {point["timestamp"] for point in sleep_detail})
+
 class ServerContractTest(unittest.TestCase):
     def setUp(self):
         self.client = TestClient(app)

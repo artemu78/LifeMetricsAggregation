@@ -29,6 +29,14 @@ export function formatRecordTime(timestamp: string, timezone: string): string {
   })
 }
 
+export function formatSleepDuration(seconds: number | null): string {
+  if (seconds == null) return '—'
+  const totalMinutes = Math.round(seconds / 60)
+  const hours = Math.floor(totalMinutes / 60)
+  const minutes = totalMinutes % 60
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`
+}
+
 function groupedSeconds(records: RescueTimeRecord[]) {
   const grouped = new Map<string, number>()
   for (const record of records) {
@@ -107,4 +115,3 @@ export function isSourceAvailable(
       return Boolean(day.rescuetime.available || day.detail?.rescueTime?.length)
   }
 }
-

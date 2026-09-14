@@ -20,6 +20,7 @@ from live_life.db import connect, insert_metric
 from live_life.fitness_drive import FOLDER_MIME_TYPE, sync_fitness_drive
 from live_life.importers import import_fitness_drive, import_inbox, import_welltory
 from live_life.report import generate_report
+from live_life.sleep import format_sleep_duration
 from form_reports import (
     FreshnessProgress,
     SourceApprovalRequired,
@@ -34,6 +35,11 @@ from form_reports import (
 
 
 class PipelineTest(unittest.TestCase):
+    def test_sleep_duration_rounds_exact_half_minute_up_like_frontend(self):
+        self.assertEqual(format_sleep_duration(149), "00:02")
+        self.assertEqual(format_sleep_duration(150), "00:03")
+        self.assertEqual(format_sleep_duration(151), "00:03")
+
     def test_source_progress_resolves_after_saved_data_before_reports(self):
         """Verify source progress resolves after saved data before reports."""
         self.config.reports.mkdir(exist_ok=True)
@@ -808,7 +814,8 @@ class PipelineTest(unittest.TestCase):
         self.assertIn("Steps: 1250", report)
         self.assertNotIn("2249", report)
         self.assertIn("Heart rate: avg 75 bpm", report)
-        self.assertIn("Sleep stages recorded: 2.00 h", previous_report)
+        self.assertIn("Sleep duration: 02:00", report)
+        self.assertNotIn("Sleep duration:", previous_report)
 
 
 if __name__ == "__main__":

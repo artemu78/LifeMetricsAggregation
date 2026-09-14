@@ -40,6 +40,7 @@ import {
 import {
   buildRescueTimeOverview,
   formatRecordTime,
+  formatSleepDuration,
   isSourceAvailable,
   PRODUCTIVITY_LABELS,
 } from './dayDetail'
@@ -175,7 +176,7 @@ function CalendarCell({ day }: { day: DashboardDay }) {
         <span>{WEEKDAYS[day.weekday - 1]}</span>
       </div>
       <div className="numbers">
-        <div><span><Moon aria-hidden="true" />Сон</span><b>{hours(day.bracelet.sleepSeconds)}</b></div>
+        <div><span><Moon aria-hidden="true" />Сон</span><b>{formatSleepDuration(day.bracelet.sleepSeconds)}</b></div>
         <div><span><Footprints aria-hidden="true" />Шаги</span><b>{day.bracelet.steps?.toLocaleString('ru-RU') ?? '—'}</b></div>
         <div><span><ListPlus aria-hidden="true" />Создано</span><b>{day.todoist.created}</b></div>
         <div><span><CheckCircle2 aria-hidden="true" />Закрыто</span><b>{day.todoist.completed}</b></div>
@@ -339,7 +340,7 @@ function DayModal({ day, timezone }: {
           <section className="panel">
             <h3>Браслет</h3>
             <div className="metric-list">
-              <p><span>Сон</span><b>{hours(day.bracelet.sleepSeconds)}</b></p>
+              <p><span>Сон</span><b>{formatSleepDuration(day.bracelet.sleepSeconds)}</b></p>
               <p><span>Шаги</span><b>{day.bracelet.steps?.toLocaleString('ru-RU') ?? '—'}</b></p>
             </div>
             <div className="sleep-stages">
