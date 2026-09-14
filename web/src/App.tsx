@@ -817,15 +817,19 @@ const Dashboard = observer(function Dashboard() {
             key={month.key}
             aria-labelledby={`month-${month.key}`}
           >
-            <h2 className="month-title" id={`month-${month.key}`}>
-              {monthLabel(month.days[0].date)}
-            </h2>
+            <div className="month-header">
+              <h2 className="month-title" id={`month-${month.key}`}>
+                {monthLabel(month.days[0].date)}
+              </h2>
+              <div className="calendar">
+                {WEEKDAYS.map((day) => (
+                  <div className="weekday" key={day}>
+                    {day}
+                  </div>
+                ))}
+              </div>
+            </div>
             <div className="calendar">
-              {WEEKDAYS.map((day) => (
-                <div className="weekday" key={day}>
-                  {day}
-                </div>
-              ))}
               {Array.from({ length: month.days[0].weekday - 1 }).map((_, i) => (
                 <div className="empty" key={`empty-${month.key}-${i}`} />
               ))}

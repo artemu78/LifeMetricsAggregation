@@ -236,6 +236,14 @@ h1 {
   padding-top: 30px;
   border-top: 1px solid #cfddd6;
 }
+.month-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  margin-bottom: 18px;
+  padding-top: 12px;
+  background: #edf3ef;
+}
 .month-title {
   margin-bottom: 14px;
   font-size: 1.5rem;
