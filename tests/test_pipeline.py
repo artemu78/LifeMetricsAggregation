@@ -540,6 +540,36 @@ class PipelineTest(unittest.TestCase):
         self.assertIn("Entry imported (18 characters; kept private", report)
         self.assertNotIn("private reflection", report)
 
+    def test_report_assigns_steps_to_calendar_date(self):
+        with connect(self.config.database) as conn:
+            for external_id, occurred_at, steps in (
+                ("early", "2026-09-12T21:30:00+00:00", 100),
+                ("daytime", "2026-09-13T07:00:00+00:00", 200),
+                ("next-early", "2026-09-13T22:00:00+00:00", 300),
+            ):
+                insert_metric(
+                    conn,
+                    source="fitness_drive",
+                    external_id=external_id,
+                    occurred_at=occurred_at,
+                    metric="fitness_drive.steps",
+                    value_num=steps,
+                    value_text=None,
+                    unit="count",
+                    payload={
+                        "recordType": "steps",
+                        "origin": "com.xiaomi.wearable",
+                        "startTime": occurred_at,
+                        "endTime": occurred_at,
+                        "count": steps,
+                    },
+                )
+
+        report = generate_report(self.config, date(2026, 9, 13)).read_text()
+
+        self.assertIn("Steps: 300", report)
+        self.assertNotIn("Steps: 500", report)
+
     def test_report_labels_rescuetime_productivity_levels(self):
         """Verify report labels rescuetime productivity levels."""
         productivity_levels = {

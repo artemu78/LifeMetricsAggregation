@@ -8,6 +8,7 @@ from .collectors import logical_window
 from .config import Config
 from .db import connect
 from .sleep import main_sleep_by_wake_date, sleep_seconds
+from .steps import STEP_METRIC, steps_by_calendar_date, step_total
 
 
 SOURCES = ("bracelet", "welltory", "todoist", "rescuetime")
@@ -63,6 +64,7 @@ def build_dashboard(config: Config, start: date, end: date) -> dict:
             WHERE occurred_at >= ? AND occurred_at < ?
               AND source IN ('fitness_drive', 'welltory', 'rescuetime')
               AND metric NOT LIKE 'fitness_drive.sleep.%_seconds'
+              AND metric != 'fitness_drive.steps'
               AND value_num IS NOT NULL
             ORDER BY occurred_at
             """,
@@ -79,6 +81,10 @@ def build_dashboard(config: Config, start: date, end: date) -> dict:
             )
         for wake_date, points in main_sleep_by_wake_date(conn, start, end, config.timezone).items():
             metrics[wake_date]["fitness_drive"].extend(points)
+        for calendar_date, points in steps_by_calendar_date(
+            conn, start, end, config.timezone
+        ).items():
+            metrics[calendar_date]["fitness_drive"].extend(points)
         for row in conn.execute(
             """
             SELECT content, created_at FROM created_tasks
@@ -154,9 +160,9 @@ def build_dashboard(config: Config, start: date, end: date) -> dict:
             if point["metric"].startswith("fitness_drive.sleep.")
         ]
         selected_sleep_seconds = sleep_seconds(selected_sleep)
-        step_values = [
-            point["value"] for point in bracelet_metrics
-            if point["metric"] == "fitness_drive.steps"
+        selected_steps = [
+            point for point in bracelet_metrics
+            if point["metric"] == STEP_METRIC
         ]
         result_days.append(
             {
@@ -170,7 +176,7 @@ def build_dashboard(config: Config, start: date, end: date) -> dict:
                 "sources": source_items,
                 "bracelet": {
                     "sleepSeconds": selected_sleep_seconds if selected_sleep_seconds else None,
-                    "steps": sum(step_values) if step_values else None,
+                    "steps": step_total(selected_steps) if selected_steps else None,
                 },
                 "welltory": {
                     "available": bool(welltory_metrics),
