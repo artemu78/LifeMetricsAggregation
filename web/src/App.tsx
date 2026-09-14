@@ -41,8 +41,10 @@ import {
   buildRescueTimeOverview,
   formatRecordTime,
   formatSleepDuration,
+  formatTrackedDuration,
   isSourceAvailable,
   PRODUCTIVITY_LABELS,
+  productivityIndexColor,
 } from './dayDetail'
 import { inclusiveDateCount } from './dashboardWindow'
 import { dashboardStore as store, type DashboardDay, type DashboardResponse } from './store'
@@ -165,11 +167,17 @@ function CalendarCell({ day }: { day: DashboardDay }) {
   const welltoryAvailable = isSourceAvailable(day, 'welltory')
   const todoistAvailable = isSourceAvailable(day, 'todoist')
   const rescuetimeAvailable = isSourceAvailable(day, 'rescuetime')
+  const rescueOverview = buildRescueTimeOverview(day.detail.rescueTime)
+  const trackedDuration = formatTrackedDuration(rescueOverview.totalTrackedSeconds)
+  const productivityIndex = rescueOverview.productivityIndex
+  const rescueTimeLabel = rescueOverview.totalTrackedSeconds > 0
+    ? ` Отслежено ${trackedDuration}. Индекс продуктивности: ${productivityIndex ?? 'нет данных'}.`
+    : ''
   return (
     <Link
       className={`day-card quality-${day.quality}`}
       to={`/day/${day.date}`}
-      aria-label={`${day.date}. ${QUALITY[day.quality]}`}
+      aria-label={`${day.date}. ${QUALITY[day.quality]}.${rescueTimeLabel}`}
     >
       <div className="date-row">
         <strong>{date.getUTCDate()}</strong>
@@ -181,6 +189,27 @@ function CalendarCell({ day }: { day: DashboardDay }) {
         <div><span><ListPlus aria-hidden="true" />Создано</span><b>{day.todoist.created}</b></div>
         <div><span><CheckCircle2 aria-hidden="true" />Закрыто</span><b>{day.todoist.completed}</b></div>
       </div>
+      {rescueOverview.totalTrackedSeconds > 0 && (
+        <div className="calendar-rescuetime" aria-hidden="true">
+          <div className="calendar-rescuetime-heading">
+            <span>Отслежено<b>{trackedDuration}</b></span>
+            <span>Индекс</span>
+          </div>
+          <div className="calendar-productivity-scale">
+            {productivityIndex != null && (
+              <b
+                className="calendar-productivity-marker"
+                style={{
+                  left: `${productivityIndex}%`,
+                  background: productivityIndexColor(productivityIndex),
+                }}
+              >
+                {productivityIndex}
+              </b>
+            )}
+          </div>
+        </div>
+      )}
       <div className="indicators" aria-label="Источники">
         <span className={braceletAvailable ? 'on' : ''} title="Браслет" aria-label={`Браслет: ${braceletAvailable ? 'данные доступны' : 'нет данных'}`}><Watch aria-hidden="true" /></span>
         <span className={welltoryAvailable ? 'on' : ''} title="Welltory" aria-label={`Welltory: ${welltoryAvailable ? 'данные доступны' : 'нет данных'}`}><HeartPulse aria-hidden="true" /></span>

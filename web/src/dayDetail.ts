@@ -37,6 +37,28 @@ export function formatSleepDuration(seconds: number | null): string {
   return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`
 }
 
+export function formatTrackedDuration(seconds: number): string {
+  const totalMinutes = Math.round(seconds / 60)
+  const hours = Math.floor(totalMinutes / 60)
+  const minutes = totalMinutes % 60
+  return `${hours}:${String(minutes).padStart(2, '0')}`
+}
+
+const PRODUCTIVITY_SCALE = {
+  low: [207, 92, 79],
+  middle: [167, 179, 174],
+  high: [77, 130, 216],
+} as const
+
+export function productivityIndexColor(index: number): string {
+  const clamped = Math.max(0, Math.min(100, index))
+  const [from, to, progress] = clamped <= 50
+    ? [PRODUCTIVITY_SCALE.low, PRODUCTIVITY_SCALE.middle, clamped / 50]
+    : [PRODUCTIVITY_SCALE.middle, PRODUCTIVITY_SCALE.high, (clamped - 50) / 50]
+  const channel = (position: number) => Math.round(from[position] + (to[position] - from[position]) * progress)
+  return `rgb(${channel(0)}, ${channel(1)}, ${channel(2)})`
+}
+
 function groupedSeconds(records: RescueTimeRecord[]) {
   const grouped = new Map<string, number>()
   for (const record of records) {
