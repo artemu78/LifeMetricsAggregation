@@ -1,21 +1,70 @@
 from __future__ import annotations
 
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from datetime import date
 from io import StringIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import json
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from live_life.api_models import DashboardSyncResponse
 from live_life.config import Config
-from live_life.data_sync_json import main
+from live_life.data_sync_json import _summary_status, _sync_collector, main
 from live_life.db import connect
 
 
 class DashboardDataSyncTest(unittest.TestCase):
+    def test_summary_status_preserves_uniform_outcomes(self):
+        self.assertEqual(_summary_status(["success", "success"]), "success")
+        self.assertEqual(_summary_status(["failed", "failed"]), "failed")
+
+    def test_mixed_collector_days_are_partial_and_keep_successful_records(self):
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            config = Config(
+                root=root,
+                timezone="Europe/Moscow",
+                day_boundary_hour=5,
+                database=root / "data/life.db",
+                inbox=root / "data/inbox",
+                reports=root / "reports",
+                welltory_downloads=root,
+                welltory_pattern="*.csv",
+                rescuetime_key_env="RESCUETIME_API_KEY",
+                todoist_token_env="TODOIST_API_TOKEN",
+            )
+            collector = Mock(
+                side_effect=[
+                    {"events": 5, "skipped_no_token": 0},
+                    OSError("network down"),
+                ]
+            )
+
+            with redirect_stderr(StringIO()):
+                result = _sync_collector(
+                    config,
+                    "rescuetime",
+                    collector,
+                    date(2026, 9, 14),
+                    date(2026, 9, 15),
+                    "2026-09-15T10:00:00+00:00",
+                )
+
+            self.assertEqual(
+                result,
+                {"source": "rescuetime", "status": "partial", "records": 5},
+            )
+            with connect(config.database) as conn:
+                runs = conn.execute(
+                    "SELECT logical_date, status FROM source_runs ORDER BY logical_date"
+                ).fetchall()
+            self.assertEqual(
+                [(row["logical_date"], row["status"]) for row in runs],
+                [("2026-09-14", "success"), ("2026-09-15", "failed")],
+            )
+
     @patch("live_life.data_sync_json.collect_todoist")
     @patch("live_life.data_sync_json.collect_rescuetime")
     @patch("live_life.data_sync_json.import_welltory")

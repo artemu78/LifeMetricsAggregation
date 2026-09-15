@@ -32,8 +32,10 @@ def _record(config, source: str, day: date, status: str, started_at: str, detail
 
 
 def _summary_status(statuses: list[str]) -> str:
-    if "failed" in statuses:
+    if statuses and all(status == "failed" for status in statuses):
         return "failed"
+    if "failed" in statuses:
+        return "partial"
     if statuses and all(status == "not_run" for status in statuses):
         return "not_run"
     if "partial" in statuses or "not_run" in statuses:
