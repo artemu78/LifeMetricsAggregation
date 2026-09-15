@@ -263,8 +263,9 @@ function CalendarCell({ day }: { day: DashboardDay }) {
         <b>{day.bracelet.steps?.toLocaleString("ru-RU") ?? "—"}</b>
         <div>
           <span className="numbers-label">
-            <ListTodo aria-hidden="true" />
-            Задачи
+            <ListTodo aria-hidden="true" width={24} height={24} />
+            Задачи <br />
+            (созд. / закр.)
           </span>
         </div>
         <div
@@ -279,7 +280,7 @@ function CalendarCell({ day }: { day: DashboardDay }) {
             <div>
               <span className="numbers-label">
                 <MonitorSmartphone aria-hidden="true" />
-                &nbsp; Экранное время
+                Экранное время
               </span>
             </div>
             <div>
