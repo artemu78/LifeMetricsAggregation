@@ -1,7 +1,7 @@
 import { makeAutoObservable, runInAction } from 'mobx'
 import type { components } from './generated/api-types'
-import { defaultDashboardWindow } from './dashboardWindow'
-import { syncDashboardData } from './sync'
+import { defaultDashboardWindow } from './dashboardWindow.ts'
+import { syncDashboardData } from './sync.ts'
 
 export type DashboardResponse = components['schemas']['DashboardResponse']
 export type DashboardDay = components['schemas']['DashboardDay']
@@ -25,6 +25,7 @@ export class DashboardStore {
   helpOpen = false
   error: string | null = null
   syncMessage: string | null = null
+  #loadSequence = 0
 
   constructor() {
     const window = defaultDashboardWindow()
@@ -34,6 +35,7 @@ export class DashboardStore {
   }
 
   async load() {
+    const sequence = ++this.#loadSequence
     this.loading = true
     this.error = null
     try {
@@ -41,17 +43,21 @@ export class DashboardStore {
       const response = await fetch(`/api/dashboard?${params}`)
       if (!response.ok) throw new Error(await errorMessage(response))
       const dashboard = (await response.json()) as DashboardResponse
+      if (sequence !== this.#loadSequence) return
       runInAction(() => {
         this.dashboard = dashboard
       })
     } catch (error) {
+      if (sequence !== this.#loadSequence) return
       runInAction(() => {
         this.error = error instanceof Error ? error.message : 'Не удалось загрузить данные'
       })
     } finally {
-      runInAction(() => {
-        this.loading = false
-      })
+      if (sequence === this.#loadSequence) {
+        runInAction(() => {
+          this.loading = false
+        })
+      }
     }
   }
 
