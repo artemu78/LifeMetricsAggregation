@@ -144,6 +144,24 @@ class DashboardResponse(BaseModel):
     days: list[DashboardDay]
 
 
+class SourceSyncSummary(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    source: SourceName
+    status: SourceRunStatus
+    records: conint(ge=0)
+
+
+class DashboardSyncResponse(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    from_: date_aliased = Field(..., alias='from')
+    to: date_aliased
+    sources: list[SourceSyncSummary]
+
+
 class FitnessSyncResponse(BaseModel):
     model_config = ConfigDict(
         extra='forbid',

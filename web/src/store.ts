@@ -1,6 +1,7 @@
 import { makeAutoObservable, runInAction } from 'mobx'
 import type { components } from './generated/api-types'
 import { defaultDashboardWindow } from './dashboardWindow'
+import { syncDashboardData } from './sync'
 
 export type DashboardResponse = components['schemas']['DashboardResponse']
 export type DashboardDay = components['schemas']['DashboardDay']
@@ -54,26 +55,33 @@ export class DashboardStore {
     }
   }
 
-  async syncBracelet() {
+  async syncAll() {
     this.syncing = true
     this.error = null
     this.syncMessage = null
     try {
       const body: DateRange = { from: this.from, to: this.to }
-      const response = await fetch('/api/fitness-sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      })
-      if (!response.ok) throw new Error(await errorMessage(response))
-      const result = (await response.json()) as components['schemas']['FitnessSyncResponse']
-      runInAction(() => {
-        this.syncMessage = `Обновлено файлов: ${result.changedFiles}; измерений: ${result.metrics}`
-      })
+      const result = await syncDashboardData(body)
+      const labels: Record<string, string> = {
+        bracelet: 'Браслет',
+        welltory: 'Welltory',
+        rescuetime: 'RescueTime',
+        todoist: 'Todoist',
+      }
       await this.load()
+      runInAction(() => {
+        this.syncMessage = result.sources
+          .map(({ source, status, records }) => {
+            if (status === 'success') return `${labels[source]}: новых записей ${records}`
+            if (status === 'not_run') return `${labels[source]}: источник недоступен`
+            if (status === 'partial') return `${labels[source]}: обновлено частично`
+            return `${labels[source]}: ошибка`
+          })
+          .join(' · ')
+      })
     } catch (error) {
       runInAction(() => {
-        this.error = error instanceof Error ? error.message : 'Синхронизация не выполнена'
+        this.error = error instanceof Error ? error.message : 'Обновление данных не выполнено'
       })
     } finally {
       runInAction(() => {

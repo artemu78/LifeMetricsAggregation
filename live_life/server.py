@@ -14,7 +14,13 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 
-from .api_models import ApiError, DashboardResponse, DateRange, FitnessSyncResponse
+from .api_models import (
+    ApiError,
+    DashboardResponse,
+    DashboardSyncResponse,
+    DateRange,
+    FitnessSyncResponse,
+)
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -94,6 +100,24 @@ def fitness_sync(request: DateRange):
         return _error(500, "INVALID_WORKER_RESPONSE", "Скрипт вернул некорректный результат.")
 
 
+@app.post("/api/data-sync", response_model=DashboardSyncResponse)
+def data_sync(request: DateRange):
+    if request.to < request.from_:
+        return _error(400, "INVALID_DATE_RANGE", "Дата «to» должна быть не раньше «from».")
+    try:
+        process = _run("live_life.data_sync_json", request.from_, request.to, timeout=300)
+    except subprocess.TimeoutExpired:
+        return _error(500, "SYNC_TIMEOUT", "Обновление данных заняло слишком много времени.")
+    if process.returncode == 75:
+        return _error(409, "SYNC_ALREADY_RUNNING", "Обновление данных уже выполняется.")
+    if process.returncode != 0:
+        return _error(500, "SYNC_FAILED", "Данные не обновлены.")
+    try:
+        return _decode(process, DashboardSyncResponse)
+    except RuntimeError:
+        return _error(500, "INVALID_WORKER_RESPONSE", "Скрипт вернул некорректный результат.")
+
+
 def canonical_openapi() -> dict:
     """Publish the checked-in contract instead of a framework-derived variant."""
     return yaml.safe_load((ROOT / "openapi.yaml").read_text(encoding="utf-8"))
@@ -131,4 +155,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

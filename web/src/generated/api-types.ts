@@ -38,6 +38,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/data-sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Synchronize every data source shown on the dashboard */
+        post: operations["syncDashboardData"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -121,6 +138,18 @@ export interface components {
             /** Format: date-time */
             generatedAt: string;
             days: components["schemas"]["DashboardDay"][];
+        };
+        SourceSyncSummary: {
+            source: components["schemas"]["SourceName"];
+            status: components["schemas"]["SourceRunStatus"];
+            records: number;
+        };
+        DashboardSyncResponse: {
+            /** Format: date */
+            from: string;
+            /** Format: date */
+            to: string;
+            sources: components["schemas"]["SourceSyncSummary"][];
         };
         FitnessSyncResponse: {
             /** Format: date */
@@ -222,6 +251,41 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             /** @description Another bracelet synchronization is running */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            500: components["responses"]["InternalError"];
+        };
+    };
+    syncDashboardData: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DateRange"];
+            };
+        };
+        responses: {
+            /** @description Source synchronization attempts completed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DashboardSyncResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            /** @description Another dashboard synchronization is running */
             409: {
                 headers: {
                     [name: string]: unknown;

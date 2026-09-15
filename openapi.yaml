@@ -2,7 +2,7 @@ openapi: 3.1.1
 info:
   title: Live Life Local Dashboard API
   version: 1.0.0
-  description: Local-only API for personal telemetry visualization and bracelet synchronization.
+  description: Local-only API for personal telemetry visualization and source synchronization.
 servers:
   - url: http://127.0.0.1:8000
 paths:
@@ -45,6 +45,33 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '409':
           description: Another bracelet synchronization is running
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/data-sync:
+    post:
+      operationId: syncDashboardData
+      summary: Synchronize every data source shown on the dashboard
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DateRange'
+      responses:
+        '200':
+          description: Source synchronization attempts completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardSyncResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          description: Another dashboard synchronization is running
           content:
             application/json:
               schema:
@@ -268,6 +295,33 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/DashboardDay'
+    SourceSyncSummary:
+      type: object
+      additionalProperties: false
+      required: [source, status, records]
+      properties:
+        source:
+          $ref: '#/components/schemas/SourceName'
+        status:
+          $ref: '#/components/schemas/SourceRunStatus'
+        records:
+          type: integer
+          minimum: 0
+    DashboardSyncResponse:
+      type: object
+      additionalProperties: false
+      required: [from, to, sources]
+      properties:
+        from:
+          type: string
+          format: date
+        to:
+          type: string
+          format: date
+        sources:
+          type: array
+          items:
+            $ref: '#/components/schemas/SourceSyncSummary'
     FitnessSyncResponse:
       type: object
       additionalProperties: false
