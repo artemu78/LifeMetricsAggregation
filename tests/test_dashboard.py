@@ -392,6 +392,37 @@ class ServerContractTest(unittest.TestCase):
             timeout=300,
         )
 
+    @patch("live_life.server._run")
+    def test_dashboard_data_sync_rejects_incomplete_extra_or_duplicate_sources(self, run):
+        valid_sources = [
+            {"source": source, "status": "success", "records": 1}
+            for source in ("bracelet", "welltory", "rescuetime", "todoist")
+        ]
+        invalid_sources = (
+            valid_sources[:3],
+            [*valid_sources, valid_sources[0]],
+            [*valid_sources[:3], valid_sources[0]],
+        )
+
+        for sources in invalid_sources:
+            with self.subTest(sources=[item["source"] for item in sources]):
+                payload = {
+                    "from": "2026-09-13",
+                    "to": "2026-09-15",
+                    "sources": sources,
+                }
+                run.return_value = subprocess.CompletedProcess(
+                    [], 0, json.dumps(payload), ""
+                )
+
+                response = self.client.post(
+                    "/api/data-sync",
+                    json={"from": "2026-09-13", "to": "2026-09-15"},
+                )
+
+                self.assertEqual(response.status_code, 500)
+                self.assertEqual(response.json()["code"], "INVALID_WORKER_RESPONSE")
+
     def test_day_route_serves_dashboard_frontend(self):
         response = self.client.get("/day/2026-09-10")
 

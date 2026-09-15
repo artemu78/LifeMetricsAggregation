@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 from pathlib import Path
+from typing import Self
 import json
 import subprocess
 import sys
@@ -12,18 +13,33 @@ from fastapi import FastAPI, Query
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import ValidationError
+from pydantic import ValidationError, model_validator
 
 from .api_models import (
     ApiError,
     DashboardResponse,
     DashboardSyncResponse,
     DateRange,
+    SourceName,
 )
 
 
 ROOT = Path(__file__).resolve().parent.parent
 app = FastAPI(title="Live Life Local Dashboard", docs_url="/docs")
+
+
+class DashboardSyncWorkerResponse(DashboardSyncResponse):
+    @model_validator(mode="after")
+    def require_each_dashboard_source(self) -> Self:
+        expected = {
+            SourceName.bracelet,
+            SourceName.welltory,
+            SourceName.rescuetime,
+            SourceName.todoist,
+        }
+        if {summary.source for summary in self.sources} != expected:
+            raise ValueError("sources must contain each dashboard source exactly once")
+        return self
 
 
 def _error(status: int, code: str, message: str, details: dict | None = None) -> JSONResponse:
@@ -94,7 +110,7 @@ def data_sync(request: DateRange):
     if process.returncode != 0:
         return _error(500, "SYNC_FAILED", "Данные не обновлены.")
     try:
-        return _decode(process, DashboardSyncResponse)
+        return _decode(process, DashboardSyncWorkerResponse)
     except RuntimeError:
         return _error(500, "INVALID_WORKER_RESPONSE", "Скрипт вернул некорректный результат.")
 

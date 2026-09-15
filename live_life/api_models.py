@@ -159,7 +159,7 @@ class DashboardSyncResponse(BaseModel):
     )
     from_: date_aliased = Field(..., alias='from')
     to: date_aliased
-    sources: list[SourceSyncSummary]
+    sources: list[SourceSyncSummary] = Field(..., max_length=4, min_length=4)
 
 
 class ApiError(BaseModel):

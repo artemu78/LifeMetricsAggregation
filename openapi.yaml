@@ -293,6 +293,8 @@ components:
           format: date
         sources:
           type: array
+          minItems: 4
+          maxItems: 4
           items:
             $ref: '#/components/schemas/SourceSyncSummary'
     ApiError:
