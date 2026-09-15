@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 from pathlib import Path
+from typing import Self
 import json
 import subprocess
 import sys
@@ -12,13 +13,33 @@ from fastapi import FastAPI, Query
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import ValidationError
+from pydantic import ValidationError, model_validator
 
-from .api_models import ApiError, DashboardResponse, DateRange, FitnessSyncResponse
+from .api_models import (
+    ApiError,
+    DashboardResponse,
+    DashboardSyncResponse,
+    DateRange,
+    SourceName,
+)
 
 
 ROOT = Path(__file__).resolve().parent.parent
 app = FastAPI(title="Live Life Local Dashboard", docs_url="/docs")
+
+
+class DashboardSyncWorkerResponse(DashboardSyncResponse):
+    @model_validator(mode="after")
+    def require_each_dashboard_source(self) -> Self:
+        expected = {
+            SourceName.bracelet,
+            SourceName.welltory,
+            SourceName.rescuetime,
+            SourceName.todoist,
+        }
+        if {summary.source for summary in self.sources} != expected:
+            raise ValueError("sources must contain each dashboard source exactly once")
+        return self
 
 
 def _error(status: int, code: str, message: str, details: dict | None = None) -> JSONResponse:
@@ -76,20 +97,20 @@ def dashboard(
         return _error(500, "INVALID_WORKER_RESPONSE", "Скрипт вернул некорректный результат.")
 
 
-@app.post("/api/fitness-sync", response_model=FitnessSyncResponse)
-def fitness_sync(request: DateRange):
+@app.post("/api/data-sync", response_model=DashboardSyncResponse)
+def data_sync(request: DateRange):
     if request.to < request.from_:
         return _error(400, "INVALID_DATE_RANGE", "Дата «to» должна быть не раньше «from».")
     try:
-        process = _run("live_life.fitness_sync_json", request.from_, request.to, timeout=300)
+        process = _run("live_life.data_sync_json", request.from_, request.to, timeout=300)
     except subprocess.TimeoutExpired:
-        return _error(500, "SYNC_TIMEOUT", "Синхронизация заняла слишком много времени.")
+        return _error(500, "SYNC_TIMEOUT", "Обновление данных заняло слишком много времени.")
     if process.returncode == 75:
-        return _error(409, "SYNC_ALREADY_RUNNING", "Синхронизация браслета уже выполняется.")
+        return _error(409, "SYNC_ALREADY_RUNNING", "Обновление данных уже выполняется.")
     if process.returncode != 0:
-        return _error(500, "SYNC_FAILED", "Синхронизация браслета не выполнена.")
+        return _error(500, "SYNC_FAILED", "Данные не обновлены.")
     try:
-        return _decode(process, FitnessSyncResponse)
+        return _decode(process, DashboardSyncWorkerResponse)
     except RuntimeError:
         return _error(500, "INVALID_WORKER_RESPONSE", "Скрипт вернул некорректный результат.")
 
@@ -131,4 +152,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

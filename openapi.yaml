@@ -2,7 +2,7 @@ openapi: 3.1.1
 info:
   title: Live Life Local Dashboard API
   version: 1.0.0
-  description: Local-only API for personal telemetry visualization and bracelet synchronization.
+  description: Local-only API for personal telemetry visualization and source synchronization.
 servers:
   - url: http://127.0.0.1:8000
 paths:
@@ -24,10 +24,10 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '500':
           $ref: '#/components/responses/InternalError'
-  /api/fitness-sync:
+  /api/data-sync:
     post:
-      operationId: syncFitness
-      summary: Atomically synchronize bracelet exports from Google Drive
+      operationId: syncDashboardData
+      summary: Synchronize every data source shown on the dashboard
       requestBody:
         required: true
         content:
@@ -36,15 +36,15 @@ paths:
               $ref: '#/components/schemas/DateRange'
       responses:
         '200':
-          description: Synchronization completed
+          description: Source synchronization attempts completed
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/FitnessSyncResponse'
+                $ref: '#/components/schemas/DashboardSyncResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
         '409':
-          description: Another bracelet synchronization is running
+          description: Another dashboard synchronization is running
           content:
             application/json:
               schema:
@@ -268,19 +268,22 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/DashboardDay'
-    FitnessSyncResponse:
+    SourceSyncSummary:
       type: object
       additionalProperties: false
-      required:
-        - from
-        - to
-        - filesFound
-        - downloaded
-        - changedFiles
-        - missingFiles
-        - records
-        - metrics
-        - affectedDates
+      required: [source, status, records]
+      properties:
+        source:
+          $ref: '#/components/schemas/SourceName'
+        status:
+          $ref: '#/components/schemas/SourceRunStatus'
+        records:
+          type: integer
+          minimum: 0
+    DashboardSyncResponse:
+      type: object
+      additionalProperties: false
+      required: [from, to, sources]
       properties:
         from:
           type: string
@@ -288,29 +291,12 @@ components:
         to:
           type: string
           format: date
-        filesFound:
-          type: integer
-          minimum: 0
-        downloaded:
-          type: integer
-          minimum: 0
-        changedFiles:
-          type: integer
-          minimum: 0
-        missingFiles:
-          type: integer
-          minimum: 0
-        records:
-          type: integer
-          minimum: 0
-        metrics:
-          type: integer
-          minimum: 0
-        affectedDates:
+        sources:
           type: array
+          minItems: 4
+          maxItems: 4
           items:
-            type: string
-            format: date
+            $ref: '#/components/schemas/SourceSyncSummary'
     ApiError:
       type: object
       additionalProperties: false

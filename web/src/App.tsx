@@ -790,14 +790,14 @@ const Dashboard = observer(function Dashboard() {
         <div className="actions">
           <button
             className="sync-button"
-            onClick={() => void store.syncBracelet()}
+            onClick={() => void store.syncAll()}
             disabled={store.syncing}
           >
             <RefreshCw
               className={store.syncing ? "spinning" : undefined}
               aria-hidden="true"
             />
-            {store.syncing ? "Обновляем…" : "Обновить браслет"}
+            {store.syncing ? "Обновляем…" : "Обновить данные"}
           </button>
           <DashboardLegend />
         </div>

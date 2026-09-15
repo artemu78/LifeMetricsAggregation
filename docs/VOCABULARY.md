@@ -58,6 +58,10 @@ _Avoid_: Local health file, Health Connect fallback
 An explicit reconciliation of Bracelet exports in Google Drive with their local source projection for a selected inclusive date range.
 _Avoid_: Dashboard refresh, full data synchronization
 
+**Dashboard source synchronization**:
+An explicit attempt to update every data source shown in the dashboard for a selected inclusive date range. It synchronizes Bracelet exports, imports available Welltory files, and collects Todoist and RescueTime; it does not include Private Diary.
+_Avoid_: Bracelet synchronization, page refresh
+
 **Source projection**:
 The local, queryable facts derived from a data source while retaining their source identity and provenance.
 _Avoid_: Raw payload, source file

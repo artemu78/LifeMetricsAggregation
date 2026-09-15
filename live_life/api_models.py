@@ -144,19 +144,22 @@ class DashboardResponse(BaseModel):
     days: list[DashboardDay]
 
 
-class FitnessSyncResponse(BaseModel):
+class SourceSyncSummary(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    source: SourceName
+    status: SourceRunStatus
+    records: conint(ge=0)
+
+
+class DashboardSyncResponse(BaseModel):
     model_config = ConfigDict(
         extra='forbid',
     )
     from_: date_aliased = Field(..., alias='from')
     to: date_aliased
-    filesFound: conint(ge=0)
-    downloaded: conint(ge=0)
-    changedFiles: conint(ge=0)
-    missingFiles: conint(ge=0)
-    records: conint(ge=0)
-    metrics: conint(ge=0)
-    affectedDates: list[date_aliased]
+    sources: list[SourceSyncSummary] = Field(..., max_length=4, min_length=4)
 
 
 class ApiError(BaseModel):

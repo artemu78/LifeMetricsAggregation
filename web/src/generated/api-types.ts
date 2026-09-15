@@ -21,7 +21,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/fitness-sync": {
+    "/api/data-sync": {
         parameters: {
             query?: never;
             header?: never;
@@ -30,8 +30,8 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Atomically synchronize bracelet exports from Google Drive */
-        post: operations["syncFitness"];
+        /** Synchronize every data source shown on the dashboard */
+        post: operations["syncDashboardData"];
         delete?: never;
         options?: never;
         head?: never;
@@ -122,18 +122,17 @@ export interface components {
             generatedAt: string;
             days: components["schemas"]["DashboardDay"][];
         };
-        FitnessSyncResponse: {
+        SourceSyncSummary: {
+            source: components["schemas"]["SourceName"];
+            status: components["schemas"]["SourceRunStatus"];
+            records: number;
+        };
+        DashboardSyncResponse: {
             /** Format: date */
             from: string;
             /** Format: date */
             to: string;
-            filesFound: number;
-            downloaded: number;
-            changedFiles: number;
-            missingFiles: number;
-            records: number;
-            metrics: number;
-            affectedDates: string[];
+            sources: components["schemas"]["SourceSyncSummary"][];
         };
         ApiError: {
             code: string;
@@ -198,7 +197,7 @@ export interface operations {
             500: components["responses"]["InternalError"];
         };
     };
-    syncFitness: {
+    syncDashboardData: {
         parameters: {
             query?: never;
             header?: never;
@@ -211,17 +210,17 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Synchronization completed */
+            /** @description Source synchronization attempts completed */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["FitnessSyncResponse"];
+                    "application/json": components["schemas"]["DashboardSyncResponse"];
                 };
             };
             400: components["responses"]["BadRequest"];
-            /** @description Another bracelet synchronization is running */
+            /** @description Another dashboard synchronization is running */
             409: {
                 headers: {
                     [name: string]: unknown;

@@ -11,7 +11,7 @@ import unittest
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
-from live_life.api_models import DashboardResponse
+from live_life.api_models import DashboardResponse, DashboardSyncResponse
 from live_life.config import Config
 from live_life.dashboard_data import build_dashboard
 from live_life.db import connect, insert_metric, record_source_run
@@ -367,6 +367,62 @@ class ServerContractTest(unittest.TestCase):
         )
         self.assertEqual(response.json()["code"], "INVALID_DATE_RANGE")
 
+    @patch("live_life.server._run")
+    def test_dashboard_data_sync_invokes_all_source_worker(self, run):
+        payload = {
+            "from": "2026-09-13",
+            "to": "2026-09-15",
+            "sources": [
+                {"source": source, "status": "success", "records": 1}
+                for source in ("bracelet", "welltory", "rescuetime", "todoist")
+            ],
+        }
+        run.return_value = subprocess.CompletedProcess([], 0, json.dumps(payload), "")
+        response = self.client.post(
+            "/api/data-sync",
+            json={"from": "2026-09-13", "to": "2026-09-15"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        DashboardSyncResponse.model_validate(response.json())
+        run.assert_called_once_with(
+            "live_life.data_sync_json",
+            date(2026, 9, 13),
+            date(2026, 9, 15),
+            timeout=300,
+        )
+
+    @patch("live_life.server._run")
+    def test_dashboard_data_sync_rejects_incomplete_extra_or_duplicate_sources(self, run):
+        valid_sources = [
+            {"source": source, "status": "success", "records": 1}
+            for source in ("bracelet", "welltory", "rescuetime", "todoist")
+        ]
+        invalid_sources = (
+            valid_sources[:3],
+            [*valid_sources, valid_sources[0]],
+            [*valid_sources[:3], valid_sources[0]],
+        )
+
+        for sources in invalid_sources:
+            with self.subTest(sources=[item["source"] for item in sources]):
+                payload = {
+                    "from": "2026-09-13",
+                    "to": "2026-09-15",
+                    "sources": sources,
+                }
+                run.return_value = subprocess.CompletedProcess(
+                    [], 0, json.dumps(payload), ""
+                )
+
+                response = self.client.post(
+                    "/api/data-sync",
+                    json={"from": "2026-09-13", "to": "2026-09-15"},
+                )
+
+                self.assertEqual(response.status_code, 500)
+                self.assertEqual(response.json()["code"], "INVALID_WORKER_RESPONSE")
+
     def test_day_route_serves_dashboard_frontend(self):
         response = self.client.get("/day/2026-09-10")
 
@@ -375,10 +431,10 @@ class ServerContractTest(unittest.TestCase):
         self.assertIn("Live Life", response.text)
 
     @patch("live_life.server._run")
-    def test_parallel_sync_returns_contractual_conflict(self, run):
+    def test_parallel_data_sync_returns_contractual_conflict(self, run):
         run.return_value = subprocess.CompletedProcess([], 75, "", "SYNC_ALREADY_RUNNING")
         response = self.client.post(
-            "/api/fitness-sync",
+            "/api/data-sync",
             json={"from": "2026-09-10", "to": "2026-09-11"},
         )
         self.assertEqual(response.status_code, 409)

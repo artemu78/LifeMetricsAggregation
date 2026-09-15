@@ -158,9 +158,10 @@ npm run build
 live-life-dashboard
 ```
 
-Open `http://127.0.0.1:8000`. The **Update bracelet data** action synchronizes
-only Google Drive bracelet exports for the displayed range. Dashboard reads do
-not update the database.
+Open `http://127.0.0.1:8000`. The **Update data** action synchronizes Bracelet
+exports from Google Drive, imports available Welltory CSV files, and collects
+RescueTime and Todoist for the displayed range. Dashboard reads do not update
+the database, and Private Diary is never exposed through the dashboard.
 
 `openapi.yaml` is the sole API contract. Regenerate the checked-in Python and
 TypeScript types after changing it:
@@ -174,6 +175,7 @@ The API starts the JSON workers as separate processes:
 
 - `python -m live_life.dashboard_json --from YYYY-MM-DD --to YYYY-MM-DD`
 - `python -m live_life.fitness_sync_json --from YYYY-MM-DD --to YYYY-MM-DD`
+- `python -m live_life.data_sync_json --from YYYY-MM-DD --to YYYY-MM-DD`
 
 Successful worker output is one JSON document on stdout; diagnostics use stderr.
 
