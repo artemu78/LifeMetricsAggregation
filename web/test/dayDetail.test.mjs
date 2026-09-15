@@ -5,7 +5,9 @@ import {
   buildRescueTimeOverview,
   formatRecordTime,
   formatSleepDuration,
+  formatTrackedDuration,
   isSourceAvailable,
+  productivityIndexColor,
 } from '../src/dayDetail.ts'
 
 test('RescueTime overview totals activity without double-counting productivity', () => {
@@ -33,6 +35,19 @@ test('sleep duration is formatted as zero-padded hours and minutes', () => {
   assert.equal(formatSleepDuration(45 * 60), '00:45')
   assert.equal(formatSleepDuration(150), '00:03')
   assert.equal(formatSleepDuration(null), '—')
+})
+
+test('tracked duration keeps hours compact and minutes zero-padded', () => {
+  assert.equal(formatTrackedDuration(9 * 3600 + 32 * 60), '9:32')
+  assert.equal(formatTrackedDuration(17 * 60), '0:17')
+})
+
+test('productivity color follows and clamps to the continuous scale', () => {
+  assert.equal(productivityIndexColor(-10), 'rgb(207, 92, 79)')
+  assert.equal(productivityIndexColor(45), 'rgb(171, 170, 165)')
+  assert.equal(productivityIndexColor(50), 'rgb(167, 179, 174)')
+  assert.equal(productivityIndexColor(100), 'rgb(77, 130, 216)')
+  assert.equal(productivityIndexColor(120), 'rgb(77, 130, 216)')
 })
 
 test('isSourceAvailable evaluates availability from response and payload rather than run status', () => {
