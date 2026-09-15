@@ -24,33 +24,6 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '500':
           $ref: '#/components/responses/InternalError'
-  /api/fitness-sync:
-    post:
-      operationId: syncFitness
-      summary: Atomically synchronize bracelet exports from Google Drive
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/DateRange'
-      responses:
-        '200':
-          description: Synchronization completed
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/FitnessSyncResponse'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '409':
-          description: Another bracelet synchronization is running
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ApiError'
-        '500':
-          $ref: '#/components/responses/InternalError'
   /api/data-sync:
     post:
       operationId: syncDashboardData
@@ -322,49 +295,6 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/SourceSyncSummary'
-    FitnessSyncResponse:
-      type: object
-      additionalProperties: false
-      required:
-        - from
-        - to
-        - filesFound
-        - downloaded
-        - changedFiles
-        - missingFiles
-        - records
-        - metrics
-        - affectedDates
-      properties:
-        from:
-          type: string
-          format: date
-        to:
-          type: string
-          format: date
-        filesFound:
-          type: integer
-          minimum: 0
-        downloaded:
-          type: integer
-          minimum: 0
-        changedFiles:
-          type: integer
-          minimum: 0
-        missingFiles:
-          type: integer
-          minimum: 0
-        records:
-          type: integer
-          minimum: 0
-        metrics:
-          type: integer
-          minimum: 0
-        affectedDates:
-          type: array
-          items:
-            type: string
-            format: date
     ApiError:
       type: object
       additionalProperties: false

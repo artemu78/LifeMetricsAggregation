@@ -19,7 +19,6 @@ from .api_models import (
     DashboardResponse,
     DashboardSyncResponse,
     DateRange,
-    FitnessSyncResponse,
 )
 
 
@@ -78,24 +77,6 @@ def dashboard(
         return _error(500, "DASHBOARD_FAILED", "Не удалось сформировать данные календаря.")
     try:
         return _decode(process, DashboardResponse)
-    except RuntimeError:
-        return _error(500, "INVALID_WORKER_RESPONSE", "Скрипт вернул некорректный результат.")
-
-
-@app.post("/api/fitness-sync", response_model=FitnessSyncResponse)
-def fitness_sync(request: DateRange):
-    if request.to < request.from_:
-        return _error(400, "INVALID_DATE_RANGE", "Дата «to» должна быть не раньше «from».")
-    try:
-        process = _run("live_life.fitness_sync_json", request.from_, request.to, timeout=300)
-    except subprocess.TimeoutExpired:
-        return _error(500, "SYNC_TIMEOUT", "Синхронизация заняла слишком много времени.")
-    if process.returncode == 75:
-        return _error(409, "SYNC_ALREADY_RUNNING", "Синхронизация браслета уже выполняется.")
-    if process.returncode != 0:
-        return _error(500, "SYNC_FAILED", "Синхронизация браслета не выполнена.")
-    try:
-        return _decode(process, FitnessSyncResponse)
     except RuntimeError:
         return _error(500, "INVALID_WORKER_RESPONSE", "Скрипт вернул некорректный результат.")
 

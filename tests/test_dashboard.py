@@ -400,10 +400,10 @@ class ServerContractTest(unittest.TestCase):
         self.assertIn("Live Life", response.text)
 
     @patch("live_life.server._run")
-    def test_parallel_sync_returns_contractual_conflict(self, run):
+    def test_parallel_data_sync_returns_contractual_conflict(self, run):
         run.return_value = subprocess.CompletedProcess([], 75, "", "SYNC_ALREADY_RUNNING")
         response = self.client.post(
-            "/api/fitness-sync",
+            "/api/data-sync",
             json={"from": "2026-09-10", "to": "2026-09-11"},
         )
         self.assertEqual(response.status_code, 409)

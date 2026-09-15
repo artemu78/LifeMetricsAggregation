@@ -162,21 +162,6 @@ class DashboardSyncResponse(BaseModel):
     sources: list[SourceSyncSummary]
 
 
-class FitnessSyncResponse(BaseModel):
-    model_config = ConfigDict(
-        extra='forbid',
-    )
-    from_: date_aliased = Field(..., alias='from')
-    to: date_aliased
-    filesFound: conint(ge=0)
-    downloaded: conint(ge=0)
-    changedFiles: conint(ge=0)
-    missingFiles: conint(ge=0)
-    records: conint(ge=0)
-    metrics: conint(ge=0)
-    affectedDates: list[date_aliased]
-
-
 class ApiError(BaseModel):
     model_config = ConfigDict(
         extra='forbid',

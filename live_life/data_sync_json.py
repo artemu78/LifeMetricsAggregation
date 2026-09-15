@@ -1,17 +1,15 @@
 from __future__ import annotations
 
 from datetime import date, timedelta
-from pathlib import Path
-import argparse
-import fcntl
 import json
 import sys
 
 from .collectors import collect_rescuetime, collect_todoist
-from .config import ensure_layout, load_config
-from .db import connect, record_source_run, utc_now
+from .config import load_config
+from .db import connect, record_source_run
 from .fitness_drive import sync_fitness_drive
 from .importers import import_fitness_drive, import_welltory
+from .sync_worker import InvalidDateRange, sync_worker
 
 
 def _days(start: date, end: date):
@@ -110,37 +108,20 @@ def _sync_collector(config, source: str, collector, start: date, end: date, star
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--from", dest="from_date", required=True)
-    parser.add_argument("--to", dest="to_date", required=True)
-    args = parser.parse_args(argv)
     try:
-        start = date.fromisoformat(args.from_date)
-        end = date.fromisoformat(args.to_date)
-    except ValueError:
+        with sync_worker(argv, load_config) as (config, start, end, started_at):
+            sources = [
+                _sync_bracelet(config, start, end, started_at),
+                _sync_welltory(config, start, end, started_at),
+                _sync_collector(config, "rescuetime", collect_rescuetime, start, end, started_at),
+                _sync_collector(config, "todoist", collect_todoist, start, end, started_at),
+            ]
+    except InvalidDateRange:
         print("INVALID_DATE_RANGE", file=sys.stderr)
         return 2
-    if end < start:
-        print("INVALID_DATE_RANGE", file=sys.stderr)
-        return 2
-
-    config = load_config()
-    ensure_layout(config)
-    lock_path = Path(config.root) / "data" / ".fitness-sync.lock"
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
-    with lock_path.open("w") as lock:
-        try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            print("SYNC_ALREADY_RUNNING", file=sys.stderr)
-            return 75
-        started_at = utc_now()
-        sources = [
-            _sync_bracelet(config, start, end, started_at),
-            _sync_welltory(config, start, end, started_at),
-            _sync_collector(config, "rescuetime", collect_rescuetime, start, end, started_at),
-            _sync_collector(config, "todoist", collect_todoist, start, end, started_at),
-        ]
+    except BlockingIOError:
+        print("SYNC_ALREADY_RUNNING", file=sys.stderr)
+        return 75
     print(json.dumps({
         "from": start.isoformat(),
         "to": end.isoformat(),

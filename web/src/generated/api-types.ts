@@ -21,23 +21,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/fitness-sync": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Atomically synchronize bracelet exports from Google Drive */
-        post: operations["syncFitness"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/data-sync": {
         parameters: {
             query?: never;
@@ -151,19 +134,6 @@ export interface components {
             to: string;
             sources: components["schemas"]["SourceSyncSummary"][];
         };
-        FitnessSyncResponse: {
-            /** Format: date */
-            from: string;
-            /** Format: date */
-            to: string;
-            filesFound: number;
-            downloaded: number;
-            changedFiles: number;
-            missingFiles: number;
-            records: number;
-            metrics: number;
-            affectedDates: string[];
-        };
         ApiError: {
             code: string;
             message: string;
@@ -224,41 +194,6 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
-            500: components["responses"]["InternalError"];
-        };
-    };
-    syncFitness: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["DateRange"];
-            };
-        };
-        responses: {
-            /** @description Synchronization completed */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["FitnessSyncResponse"];
-                };
-            };
-            400: components["responses"]["BadRequest"];
-            /** @description Another bracelet synchronization is running */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
             500: components["responses"]["InternalError"];
         };
     };
