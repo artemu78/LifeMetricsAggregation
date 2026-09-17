@@ -123,7 +123,7 @@ def canonical_openapi() -> dict:
 app.openapi = canonical_openapi
 
 STATIC = ROOT / "web" / "dist"
-if not STATIC.exists() and (ROOT / "web-dist").exists():
+if not (STATIC / "index.html").exists() and (ROOT / "web-dist" / "index.html").exists():
     STATIC = ROOT / "web-dist"
 
 
