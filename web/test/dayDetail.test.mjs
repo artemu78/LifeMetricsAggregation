@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import test from 'node:test'
+import { test } from 'vitest'
 
 import {
   buildRescueTimeOverview,
@@ -91,3 +91,47 @@ test('isSourceAvailable detects Todoist availability from completed tasks or det
   }
   assert.equal(isSourceAvailable(dayWithDetail, 'todoist'), true)
 })
+
+test('buildRescueTimeOverview handles empty records and unknown labels', () => {
+  const emptyOverview = buildRescueTimeOverview([])
+  assert.equal(emptyOverview.totalTrackedSeconds, 0)
+  assert.equal(emptyOverview.productivityIndex, null)
+  assert.deepEqual(emptyOverview.categories, [])
+  assert.deepEqual(emptyOverview.productivity, [])
+
+  const unknownOverview = buildRescueTimeOverview([
+    { timestamp: '2026-09-12T06:00:00Z', perspective: 'activity', label: 'Other', seconds: 100 },
+    { timestamp: '2026-09-12T06:00:00Z', perspective: 'productivity', label: '99', seconds: 100 },
+  ])
+  assert.equal(unknownOverview.totalTrackedSeconds, 100)
+  assert.equal(unknownOverview.productivityIndex, 50)
+  assert.equal(unknownOverview.productivity[0].weight, 0)
+  assert.equal(unknownOverview.productivity[0].name, '99')
+
+  const zeroSecOverview = buildRescueTimeOverview([
+    { timestamp: '2026-09-12T06:00:00Z', perspective: 'activity', label: 'Idle', seconds: 0 },
+  ])
+  assert.equal(zeroSecOverview.totalTrackedSeconds, 0)
+  assert.equal(zeroSecOverview.categories[0].percentage, 0)
+})
+
+test('isSourceAvailable detects sources through detail records', () => {
+  const day = {
+    bracelet: { sleepSeconds: null, steps: null },
+    welltory: { available: false },
+    todoist: { created: 0, completed: 0 },
+    rescuetime: { available: false },
+    detail: {
+      braceletMetrics: [{ metric: 'fitness_drive.steps', value: 100 }],
+      welltoryMetrics: [{ metric: 'welltory.Energy', value: 75 }],
+      completedTasks: [{ content: 'Done' }],
+      rescueTime: [{ perspective: 'activity', label: 'Docs', seconds: 60 }],
+    },
+  }
+
+  assert.equal(isSourceAvailable(day, 'bracelet'), true)
+  assert.equal(isSourceAvailable(day, 'welltory'), true)
+  assert.equal(isSourceAvailable(day, 'todoist'), true)
+  assert.equal(isSourceAvailable(day, 'rescuetime'), true)
+})
+

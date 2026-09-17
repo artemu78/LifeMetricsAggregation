@@ -8,6 +8,9 @@ __pycache__/
 .DS_Store
 node_modules/
 web-dist/
+dist/
+coverage/
 *.tsbuildinfo
 vite.config.js
 vite.config.d.ts
+reva-health-explorer/
