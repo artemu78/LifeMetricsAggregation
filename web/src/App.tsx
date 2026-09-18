@@ -786,7 +786,7 @@ export const SyncModal = observer(function SyncModal() {
       ).filter((element) => !element.hasAttribute("disabled"));
       if (!focusable.length) return;
       const first = focusable[0];
-      const last = focusable[focusable.length - 1];
+      const last = focusable.at(-1)!;
       const active = document.activeElement as HTMLElement | null;
       if (!active || !focusable.includes(active)) {
         event.preventDefault();
@@ -819,6 +819,28 @@ export const SyncModal = observer(function SyncModal() {
     };
   }, []);
 
+  let statusBanner: React.ReactNode;
+  if (store.error) {
+    statusBanner = (
+      <div className="sync-status-banner error" role="alert">
+        {store.error}
+      </div>
+    );
+  } else if (store.syncing) {
+    statusBanner = (
+      <div className="sync-status-banner in-progress">
+        <RefreshCw className="spinning" aria-hidden="true" />
+        <span>Обновляем источники…</span>
+      </div>
+    );
+  } else {
+    statusBanner = (
+      <div className="sync-status-banner success">
+        <span>Обновление завершено</span>
+      </div>
+    );
+  }
+
   return (
     <div className="modal-backdrop">
       <article
@@ -845,20 +867,8 @@ export const SyncModal = observer(function SyncModal() {
         </header>
 
         <div className="sync-modal-body">
-          {store.error ? (
-            <div className="sync-status-banner error" role="alert">
-              {store.error}
-            </div>
-          ) : store.syncing ? (
-            <div className="sync-status-banner in-progress">
-              <RefreshCw className="spinning" aria-hidden="true" />
-              <span>Обновляем источники…</span>
-            </div>
-          ) : (
-            <div className="sync-status-banner success">
-              <span>Обновление завершено</span>
-            </div>
-          )}
+          {statusBanner}
+
 
           <ul className="sync-source-list" aria-label="Источники данных">
             {SYNC_SOURCES.map(({ key, label }) => {

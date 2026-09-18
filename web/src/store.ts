@@ -1,7 +1,7 @@
 import { makeAutoObservable, runInAction } from 'mobx'
 import type { components } from './generated/api-types'
 import { defaultDashboardWindow } from './dashboardWindow.ts'
-import { syncDashboardData, syncDashboardDataStream, type SyncProgressEvent } from './sync.ts'
+import { syncDashboardDataStream } from './sync.ts'
 
 export type DashboardResponse = components['schemas']['DashboardResponse']
 export type DashboardDay = components['schemas']['DashboardDay']

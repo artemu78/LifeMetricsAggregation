@@ -99,16 +99,18 @@ def dashboard(
         return _error(500, "INVALID_WORKER_RESPONSE", "Скрипт вернул некорректный результат.")
 
 
-def _stream_sync(start: date, end: date, *, timeout: int) -> Response:
-    config = load_config(ROOT)
-    lock_path = Path(config.root) / "data" / ".fitness-sync.lock"
+SYNC_ALREADY_RUNNING_MESSAGE = "Обновление данных уже выполняется."
+
+
+def _stream_sync(start: date, end: date, *, timeout: int) -> StreamingResponse | JSONResponse:
+    lock_path = ROOT / ".live_life.data_sync.lock"
     if lock_path.exists():
         try:
             with lock_path.open("r+") as lock:
                 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 fcntl.flock(lock, fcntl.LOCK_UN)
         except (BlockingIOError, OSError):
-            return _error(409, "SYNC_ALREADY_RUNNING", "Обновление данных уже выполняется.")
+            return _error(409, "SYNC_ALREADY_RUNNING", SYNC_ALREADY_RUNNING_MESSAGE)
 
     def event_generator():
         proc = subprocess.Popen(
@@ -129,16 +131,16 @@ def _stream_sync(start: date, end: date, *, timeout: int) -> Response:
             bufsize=1,
         )
         try:
-            assert proc.stdout is not None
-            for line in iter(proc.stdout.readline, ""):
-                line = line.strip()
-                if not line:
-                    continue
-                yield f"data: {line}\n\n"
+            if proc.stdout is not None:
+                for line in iter(proc.stdout.readline, ""):
+                    line = line.strip()
+                    if not line:
+                        continue
+                    yield f"data: {line}\n\n"
             proc.wait(timeout=timeout)
             if proc.returncode == 75:
                 err = json.dumps(
-                    {"type": "error", "code": "SYNC_ALREADY_RUNNING", "message": "Обновление данных уже выполняется."},
+                    {"type": "error", "code": "SYNC_ALREADY_RUNNING", "message": SYNC_ALREADY_RUNNING_MESSAGE},
                     ensure_ascii=False,
                 )
                 yield f"data: {err}\n\n"
@@ -188,7 +190,7 @@ def data_sync(request: DateRange, req: Request):
     except subprocess.TimeoutExpired:
         return _error(500, "SYNC_TIMEOUT", "Обновление данных заняло слишком много времени.")
     if process.returncode == 75:
-        return _error(409, "SYNC_ALREADY_RUNNING", "Обновление данных уже выполняется.")
+        return _error(409, "SYNC_ALREADY_RUNNING", SYNC_ALREADY_RUNNING_MESSAGE)
     if process.returncode != 0:
         return _error(500, "SYNC_FAILED", "Данные не обновлены.")
     try:
