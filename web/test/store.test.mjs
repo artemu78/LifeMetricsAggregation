@@ -202,3 +202,50 @@ test('DashboardStore syncAll formats all source status variants and handles erro
   }
 })
 
+test('DashboardStore openSyncModal and closeSyncModal manage modal visibility', () => {
+  const store = new DashboardStore()
+  assert.equal(store.syncModalOpen, false)
+  store.openSyncModal()
+  assert.equal(store.syncModalOpen, true)
+  store.closeSyncModal()
+  assert.equal(store.syncModalOpen, false)
+})
+
+test('DashboardStore syncAll populates syncProgress with pending and resolved source data', async () => {
+  const originalFetch = globalThis.fetch
+  try {
+    const store = new DashboardStore()
+    globalThis.fetch = async (url) => {
+      if (typeof url === 'string' && url.includes('/api/data-sync')) {
+        return new Response(
+          JSON.stringify({
+            from: '2026-09-10',
+            to: '2026-09-15',
+            sources: [
+              { source: 'bracelet', status: 'success', records: 5 },
+              { source: 'welltory', status: 'not_run', records: 0 },
+              { source: 'rescuetime', status: 'partial', records: 10 },
+              { source: 'todoist', status: 'success', records: 2 },
+            ],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        )
+      }
+      return new Response(JSON.stringify(dashboard('2026-09-15T12:00:00Z')), { status: 200 })
+    }
+
+    assert.equal(store.syncModalOpen, false)
+    const syncPromise = store.syncAll()
+    assert.equal(store.syncModalOpen, true)
+    assert.equal(store.syncing, true)
+    assert.equal(store.syncProgress.bracelet.status, 'pending')
+    await syncPromise
+    assert.equal(store.syncing, false)
+    assert.equal(store.syncProgress.bracelet.status, 'success')
+    assert.equal(store.syncProgress.welltory.status, 'not_run')
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+

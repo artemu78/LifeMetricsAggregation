@@ -152,6 +152,8 @@ describe('App Component', () => {
       store.to = '2026-09-16'
       store.loading = false
       store.syncing = false
+      store.syncModalOpen = false
+      store.syncProgress = {}
       store.helpOpen = false
       store.error = null
       store.syncMessage = null
@@ -253,6 +255,60 @@ describe('App Component', () => {
     expect(screen.getByText('Загружаем календарь…')).toBeInTheDocument()
     expect(screen.getByText('Сетевая ошибка')).toBeInTheDocument()
     expect(screen.getByText('Данные успешно обновлены')).toBeInTheDocument()
+  })
+
+  it('renders SyncModal with spinners and timestamps and handles close', async () => {
+    act(() => {
+      store.syncModalOpen = true
+      store.syncing = true
+      store.syncProgress = {
+        bracelet: { source: 'bracelet', status: 'pending', latest: null, display: null },
+        welltory: { source: 'welltory', status: 'success', latest: '2026-09-15T08:30:00Z', display: '15/09/2026 08:30:00' },
+        rescuetime: { source: 'rescuetime', status: 'pending', latest: null, display: null },
+        todoist: { source: 'todoist', status: 'not_run', latest: null, display: 'недоступен' },
+      }
+    })
+
+    render(
+      <MemoryRouter initialEntries={['/']}>
+        <App />
+      </MemoryRouter>,
+    )
+
+    expect(screen.getByRole('heading', { name: 'Обновление данных' })).toBeInTheDocument()
+    expect(screen.getByText('Обновляем источники…')).toBeInTheDocument()
+    expect(screen.getByText('15/09/2026 08:30:00')).toBeInTheDocument()
+    expect(screen.getByText('недоступен')).toBeInTheDocument()
+    expect(screen.getByLabelText('Обновление: Браслет')).toBeInTheDocument()
+    expect(screen.getByLabelText('Обновление: RescueTime')).toBeInTheDocument()
+
+    // Escape closes modal
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(store.syncModalOpen).toBe(false)
+  })
+
+  it('handles focus trapping and close button in SyncModal', async () => {
+    act(() => {
+      store.syncModalOpen = true
+      store.syncing = false
+      store.syncProgress = {
+        bracelet: { source: 'bracelet', status: 'success', latest: '2026-09-15T08:00:00Z', display: '15/09/2026 08:00:00' },
+        welltory: { source: 'welltory', status: 'success', latest: '2026-09-15T08:30:00Z', display: '15/09/2026 08:30:00' },
+        rescuetime: { source: 'rescuetime', status: 'success', latest: '2026-09-15T09:00:00Z', display: '15/09/2026 09:00:00' },
+        todoist: { source: 'todoist', status: 'success', latest: '2026-09-15T10:00:00Z', display: '15/09/2026 10:00:00' },
+      }
+    })
+
+    render(
+      <MemoryRouter initialEntries={['/']}>
+        <App />
+      </MemoryRouter>,
+    )
+
+    expect(screen.getByText('Обновление завершено')).toBeInTheDocument()
+    const closeBtn = screen.getByRole('button', { name: 'Закрыть' })
+    fireEvent.click(closeBtn)
+    expect(store.syncModalOpen).toBe(false)
   })
 
   it('opens day modal when navigating to /day/:date and displays full details', async () => {

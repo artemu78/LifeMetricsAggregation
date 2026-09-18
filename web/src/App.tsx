@@ -758,6 +758,149 @@ const DayRoute = observer(function DayRoute() {
   return <DayModal day={day} timezone={store.dashboard.timezone} />;
 });
 
+const SYNC_SOURCES = [
+  { key: "bracelet", label: "Браслет" },
+  { key: "welltory", label: "Welltory" },
+  { key: "rescuetime", label: "RescueTime" },
+  { key: "todoist", label: "Todoist" },
+] as const;
+
+export const SyncModal = observer(function SyncModal() {
+  const modalRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    modalRef.current?.focus();
+
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        store.closeSyncModal();
+        return;
+      }
+      if (event.key !== "Tab" || !modalRef.current) return;
+      const focusable = Array.from(
+        modalRef.current.querySelectorAll<HTMLElement>(
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+        ),
+      ).filter((element) => !element.hasAttribute("disabled"));
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const active = document.activeElement as HTMLElement | null;
+      if (!active || !focusable.includes(active)) {
+        event.preventDefault();
+        const target = event.shiftKey ? last : first;
+        target.focus();
+      } else if (event.shiftKey && active === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && active === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (
+        modalRef.current &&
+        !modalRef.current.contains(event.target as Node)
+      ) {
+        store.closeSyncModal();
+      }
+    };
+
+    window.addEventListener("keydown", handleKey);
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", handleKey);
+      document.removeEventListener("pointerdown", handlePointerDown);
+    };
+  }, []);
+
+  return (
+    <div className="modal-backdrop">
+      <article
+        ref={modalRef}
+        className="modal sync-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="sync-modal-title"
+        tabIndex={-1}
+      >
+        <header className="sync-modal-header">
+          <div>
+            <p className="eyebrow">Синхронизация данных</p>
+            <h2 id="sync-modal-title">Обновление данных</h2>
+          </div>
+          <button
+            type="button"
+            className="icon-button"
+            onClick={() => store.closeSyncModal()}
+            aria-label="Закрыть окно обновления"
+          >
+            <X aria-hidden="true" />
+          </button>
+        </header>
+
+        <div className="sync-modal-body">
+          {store.error ? (
+            <div className="sync-status-banner error" role="alert">
+              {store.error}
+            </div>
+          ) : store.syncing ? (
+            <div className="sync-status-banner in-progress">
+              <RefreshCw className="spinning" aria-hidden="true" />
+              <span>Обновляем источники…</span>
+            </div>
+          ) : (
+            <div className="sync-status-banner success">
+              <span>Обновление завершено</span>
+            </div>
+          )}
+
+          <ul className="sync-source-list" aria-label="Источники данных">
+            {SYNC_SOURCES.map(({ key, label }) => {
+              const progress = store.syncProgress[key];
+              const isPending = !progress || progress.status === "pending";
+              return (
+                <li
+                  key={key}
+                  className={`sync-source-item ${isPending ? "pending" : progress.status}`}
+                >
+                  <span className="sync-source-name">{label}</span>
+                  <span className="sync-source-result">
+                    {isPending ? (
+                      <span className="sync-spinner" aria-label={`Обновление: ${label}`}>
+                        <RefreshCw className="spinning" aria-hidden="true" />
+                      </span>
+                    ) : (
+                      <span className="sync-source-timestamp">
+                        {progress.display || progress.status}
+                      </span>
+                    )}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+
+        <footer className="sync-modal-footer">
+          <button
+            type="button"
+            className="button primary"
+            onClick={() => store.closeSyncModal()}
+          >
+            Закрыть
+          </button>
+        </footer>
+      </article>
+    </div>
+  );
+});
+
 const Dashboard = observer(function Dashboard() {
   const dayMatch = useMatch("/day/:date");
   useEffect(() => {
@@ -778,7 +921,7 @@ const Dashboard = observer(function Dashboard() {
   const displayedDayCount =
     store.dashboard?.days.length ?? inclusiveDateCount(store.from, store.to);
   return (
-    <main className={dayMatch ? "app blurred" : "app"}>
+    <main className={dayMatch || store.syncModalOpen ? "app blurred" : "app"}>
       <header className="topbar">
         <div>
           <p className="eyebrow">Локальный обзор</p>
@@ -843,6 +986,7 @@ const Dashboard = observer(function Dashboard() {
       </div>
 
       <Outlet />
+      {store.syncModalOpen && <SyncModal />}
     </main>
   );
 });

@@ -7,7 +7,15 @@ from datetime import date as date_aliased
 from enum import StrEnum
 from typing import Any
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, confloat, conint
+from pydantic import (
+    AwareDatetime,
+    BaseModel,
+    ConfigDict,
+    Field,
+    RootModel,
+    confloat,
+    conint,
+)
 
 
 class DateRange(BaseModel):
@@ -169,3 +177,52 @@ class ApiError(BaseModel):
     code: str
     message: str
     details: dict[str, Any]
+
+
+class Type(StrEnum):
+    progress = 'progress'
+
+
+class SyncProgressEvent(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    type: Type
+    source: SourceName
+    status: SourceRunStatus
+    records: conint(ge=0)
+    latest: AwareDatetime | None = None
+    display: str | None = None
+
+
+class Type1(StrEnum):
+    complete = 'complete'
+
+
+class SyncCompleteEvent(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    type: Type1
+    from_: date_aliased = Field(..., alias='from')
+    to: date_aliased
+    sources: list[SourceSyncSummary] = Field(..., max_length=4, min_length=4)
+
+
+class Type2(StrEnum):
+    error = 'error'
+
+
+class SyncErrorEvent(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    type: Type2
+    code: str
+    message: str
+
+
+class SyncStreamEvent(
+    RootModel[SyncProgressEvent | SyncCompleteEvent | SyncErrorEvent]
+):
+    root: SyncProgressEvent | SyncCompleteEvent | SyncErrorEvent

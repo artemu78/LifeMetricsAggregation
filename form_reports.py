@@ -17,15 +17,19 @@ from live_life.config import Config, ensure_layout, load_config
 from live_life.db import connect, record_source_run, utc_now
 from live_life.diary_drive import sync_diary_drive
 from live_life.fitness_drive import sync_fitness_drive
+from live_life.freshness import (
+    FITNESS_DRIVE_LABEL,
+    FRESHNESS_SOURCES,
+    _local_timestamp,
+    data_freshness,
+    display_timestamp,
+    get_source_latest,
+)
 from live_life.importers import import_fitness_drive, import_inbox, import_welltory
 from live_life.report import generate_report
 
 
 REPORT_NAME = re.compile(r"^(\d{4}-\d{2}-\d{2})\.md$")
-FITNESS_DRIVE_LABEL = "Fitness bracelet (Google Drive)"
-FRESHNESS_SOURCES = (
-    FITNESS_DRIVE_LABEL, "Welltory", "RescueTime", "Todoist", "Diary"
-)
 
 
 class FreshnessProgress:
@@ -182,66 +186,6 @@ def inclusive_days(start: date, end: date):
     while current <= end:
         yield current
         current += timedelta(days=1)
-
-
-def _local_timestamp(value: str | None, timezone_name: str) -> str | None:
-    """Convert an optional ISO timestamp to the configured local timezone."""
-    if not value:
-        return None
-    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=ZoneInfo(timezone_name))
-    return parsed.astimezone(ZoneInfo(timezone_name)).isoformat(timespec="seconds")
-
-
-def data_freshness(config: Config, now: datetime | None = None) -> dict[str, object]:
-    """Return the latest stored record time for every supported data source."""
-    timezone = ZoneInfo(config.timezone)
-    current = now or datetime.now(timezone)
-    if current.tzinfo is None:
-        current = current.replace(tzinfo=timezone)
-    current = current.astimezone(timezone)
-
-    with connect(config.database) as conn:
-        metric_latest = {
-            row["source"]: _local_timestamp(row["latest"], config.timezone)
-            for row in conn.execute(
-                "SELECT source, MAX(occurred_at) AS latest FROM metric_events GROUP BY source"
-            )
-        }
-        todoist_latest = conn.execute(
-            """
-            SELECT MAX(recorded_at) AS latest
-            FROM (
-                SELECT completed_at AS recorded_at FROM completed_tasks WHERE source = 'todoist'
-                UNION ALL
-                SELECT created_at AS recorded_at FROM created_tasks WHERE source = 'todoist'
-            )
-            """
-        ).fetchone()["latest"]
-        diary_latest = conn.execute(
-            "SELECT MAX(logical_date) AS latest FROM journal_entries"
-        ).fetchone()["latest"]
-
-    return {
-        "reported_at": current.isoformat(timespec="seconds"),
-        "sources": {
-            FITNESS_DRIVE_LABEL: metric_latest.get("fitness_drive"),
-            "Welltory": metric_latest.get("welltory"),
-            "RescueTime": metric_latest.get("rescuetime"),
-            "Todoist": _local_timestamp(todoist_latest, config.timezone),
-            "Diary": diary_latest,
-        },
-    }
-
-
-def display_timestamp(value: str | None) -> str:
-    """Format an ISO date or timestamp for display, or indicate missing records."""
-    if not value:
-        return "no records"
-    if len(value) == 10:
-        return date.fromisoformat(value).strftime("%d/%m/%Y")
-    return datetime.fromisoformat(value).strftime("%d/%m/%Y %H:%M:%S")
 
 
 def format_data_freshness(summary: dict[str, object]) -> str:
