@@ -446,6 +446,8 @@ h1 {
   backdrop-filter: blur(8px);
 }
 .modal {
+  margin: 0;
+  color: inherit;
   width: 90vw;
   height: 90vh;
   padding: clamp(20px, 3vw, 42px);

@@ -388,7 +388,7 @@ function MetricChart({
 }
 
 function useModalDismissAndTrapFocus(
-  modalRef: React.RefObject<HTMLElement | null>,
+  modalRef: React.RefObject<HTMLDialogElement | null>,
   onClose: () => void,
   onKeyDown?: (event: KeyboardEvent) => void,
 ) {
@@ -457,7 +457,7 @@ function DayModal({
   day: DashboardDay;
   timezone: DashboardResponse["timezone"];
 }) {
-  const modalRef = useRef<HTMLElement>(null);
+  const modalRef = useRef<HTMLDialogElement>(null);
   const navigate = useNavigate();
   const days = store.dashboard?.days ?? [];
   const selectedIndex = days.findIndex((item) => item.date === day.date);
@@ -489,11 +489,10 @@ function DayModal({
   );
   return (
     <div className="modal-backdrop">
-      <article
+      <dialog
         ref={modalRef}
         className="modal"
-        role="dialog"
-        aria-modal="true"
+        open
         aria-labelledby="day-title"
         tabIndex={-1}
       >
@@ -763,7 +762,7 @@ function DayModal({
             </p>
           </section>
         </div>
-      </article>
+      </dialog>
     </div>
   );
 }
@@ -786,7 +785,7 @@ const SYNC_SOURCES = [
 ] as const;
 
 export const SyncModal = observer(function SyncModal() {
-  const modalRef = useRef<HTMLElement>(null);
+  const modalRef = useRef<HTMLDialogElement>(null);
 
   useModalDismissAndTrapFocus(modalRef, () => store.closeSyncModal());
 
@@ -814,11 +813,10 @@ export const SyncModal = observer(function SyncModal() {
 
   return (
     <div className="modal-backdrop">
-      <article
+      <dialog
         ref={modalRef}
         className="modal sync-modal"
-        role="dialog"
-        aria-modal="true"
+        open
         aria-labelledby="sync-modal-title"
         tabIndex={-1}
       >
@@ -877,7 +875,7 @@ export const SyncModal = observer(function SyncModal() {
             Закрыть
           </button>
         </footer>
-      </article>
+      </dialog>
     </div>
   );
 });
