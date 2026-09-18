@@ -440,6 +440,26 @@ class ServerContractTest(unittest.TestCase):
         self.assertEqual(response.status_code, 409)
         self.assertEqual(response.json()["code"], "SYNC_ALREADY_RUNNING")
 
+    @patch("subprocess.Popen")
+    def test_dashboard_data_sync_stream_success(self, popen):
+        mock_proc = popen.return_value
+        mock_proc.poll.return_value = 0
+        mock_proc.returncode = 0
+        mock_proc.stdout.readline.side_effect = [
+            '{"type": "progress", "source": "bracelet", "status": "success", "records": 1, "latest": "2026-09-15T10:00:00+03:00", "display": "15/09/2026 10:00:00"}\n',
+            '{"type": "complete", "from": "2026-09-13", "to": "2026-09-15", "sources": []}\n',
+            "",
+        ]
+        response = self.client.post(
+            "/api/data-sync",
+            json={"from": "2026-09-13", "to": "2026-09-15"},
+            headers={"Accept": "text/event-stream"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("text/event-stream", response.headers["content-type"])
+        self.assertIn("data: {", response.text)
+        self.assertIn('"source": "bracelet"', response.text)
+
     @patch("live_life.fitness_sync_json._record")
     @patch("live_life.fitness_sync_json.import_fitness_drive")
     @patch("live_life.fitness_sync_json.sync_fitness_drive")

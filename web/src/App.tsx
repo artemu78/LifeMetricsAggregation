@@ -387,41 +387,27 @@ function MetricChart({
   );
 }
 
-function DayModal({
-  day,
-  timezone,
-}: {
-  day: DashboardDay;
-  timezone: DashboardResponse["timezone"];
-}) {
-  const modalRef = useRef<HTMLElement>(null);
-  const navigate = useNavigate();
-  const days = store.dashboard?.days ?? [];
-  const selectedIndex = days.findIndex((item) => item.date === day.date);
-  const previousDate = selectedIndex > 0 ? days[selectedIndex - 1].date : null;
-  const nextDate =
-    selectedIndex >= 0 && selectedIndex < days.length - 1
-      ? days[selectedIndex + 1].date
-      : null;
-  const close = () => navigate("/", { replace: true });
-  const selectDate = (date: string) => navigate(`/day/${date}`);
+function useModalDismissAndTrapFocus(
+  modalRef: React.RefObject<HTMLDialogElement | null>,
+  onClose: () => void,
+  onKeyDown?: (event: KeyboardEvent) => void,
+) {
+  const handlersRef = useRef({ onClose, onKeyDown });
+  useEffect(() => {
+    handlersRef.current = { onClose, onKeyDown };
+  });
+
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     modalRef.current?.focus();
+
     const handleKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
-        close();
+        handlersRef.current.onClose();
         return;
       }
-      if (event.key === "ArrowLeft" && previousDate) {
-        selectDate(previousDate);
-        return;
-      }
-      if (event.key === "ArrowRight" && nextDate) {
-        selectDate(nextDate);
-        return;
-      }
+      handlersRef.current.onKeyDown?.(event);
       if (event.key !== "Tab" || !modalRef.current) return;
       const focusable = Array.from(
         modalRef.current.querySelectorAll<HTMLElement>(
@@ -430,7 +416,7 @@ function DayModal({
       ).filter((element) => !element.hasAttribute("disabled"));
       if (!focusable.length) return;
       const first = focusable[0];
-      const last = focusable[focusable.length - 1];
+      const last = focusable.at(-1)!;
       const active = document.activeElement as HTMLElement | null;
       if (!active || !focusable.includes(active)) {
         event.preventDefault();
@@ -444,14 +430,16 @@ function DayModal({
         first.focus();
       }
     };
+
     const handlePointerDown = (event: PointerEvent) => {
       if (
         modalRef.current &&
         !modalRef.current.contains(event.target as Node)
       ) {
-        close();
+        handlersRef.current.onClose();
       }
     };
+
     window.addEventListener("keydown", handleKey);
     document.addEventListener("pointerdown", handlePointerDown);
     return () => {
@@ -459,7 +447,39 @@ function DayModal({
       window.removeEventListener("keydown", handleKey);
       document.removeEventListener("pointerdown", handlePointerDown);
     };
-  }, [navigate, previousDate, nextDate]);
+  }, [modalRef]);
+}
+
+function DayModal({
+  day,
+  timezone,
+}: {
+  day: DashboardDay;
+  timezone: DashboardResponse["timezone"];
+}) {
+  const modalRef = useRef<HTMLDialogElement>(null);
+  const navigate = useNavigate();
+  const days = store.dashboard?.days ?? [];
+  const selectedIndex = days.findIndex((item) => item.date === day.date);
+  const previousDate = selectedIndex > 0 ? days[selectedIndex - 1].date : null;
+  const nextDate =
+    selectedIndex >= 0 && selectedIndex < days.length - 1
+      ? days[selectedIndex + 1].date
+      : null;
+  const close = () => navigate("/", { replace: true });
+  const selectDate = (date: string) => navigate(`/day/${date}`);
+
+  useModalDismissAndTrapFocus(
+    modalRef,
+    close,
+    (event) => {
+      if (event.key === "ArrowLeft" && previousDate) {
+        selectDate(previousDate);
+      } else if (event.key === "ArrowRight" && nextDate) {
+        selectDate(nextDate);
+      }
+    },
+  );
   const sleep = day.detail.braceletMetrics.filter((point) =>
     point.metric.startsWith("fitness_drive.sleep."),
   );
@@ -469,11 +489,10 @@ function DayModal({
   );
   return (
     <div className="modal-backdrop">
-      <article
+      <dialog
         ref={modalRef}
         className="modal"
-        role="dialog"
-        aria-modal="true"
+        open
         aria-labelledby="day-title"
         tabIndex={-1}
       >
@@ -743,7 +762,7 @@ function DayModal({
             </p>
           </section>
         </div>
-      </article>
+      </dialog>
     </div>
   );
 }
@@ -756,6 +775,109 @@ const DayRoute = observer(function DayRoute() {
   if (!day) return <Navigate to="/" replace />;
 
   return <DayModal day={day} timezone={store.dashboard.timezone} />;
+});
+
+const SYNC_SOURCES = [
+  { key: "bracelet", label: "Браслет" },
+  { key: "welltory", label: "Welltory" },
+  { key: "rescuetime", label: "RescueTime" },
+  { key: "todoist", label: "Todoist" },
+] as const;
+
+export const SyncModal = observer(function SyncModal() {
+  const modalRef = useRef<HTMLDialogElement>(null);
+
+  useModalDismissAndTrapFocus(modalRef, () => store.closeSyncModal());
+
+  let statusBanner: React.ReactNode;
+  if (store.error) {
+    statusBanner = (
+      <div className="sync-status-banner error" role="alert">
+        {store.error}
+      </div>
+    );
+  } else if (store.syncing) {
+    statusBanner = (
+      <div className="sync-status-banner in-progress">
+        <RefreshCw className="spinning" aria-hidden="true" />
+        <span>Обновляем источники…</span>
+      </div>
+    );
+  } else {
+    statusBanner = (
+      <div className="sync-status-banner success">
+        <span>Обновление завершено</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="modal-backdrop">
+      <dialog
+        ref={modalRef}
+        className="modal sync-modal"
+        open
+        aria-labelledby="sync-modal-title"
+        tabIndex={-1}
+      >
+        <header className="sync-modal-header">
+          <div>
+            <p className="eyebrow">Синхронизация данных</p>
+            <h2 id="sync-modal-title">Обновление данных</h2>
+          </div>
+          <button
+            type="button"
+            className="icon-button"
+            onClick={() => store.closeSyncModal()}
+            aria-label="Закрыть окно обновления"
+          >
+            <X aria-hidden="true" />
+          </button>
+        </header>
+
+        <div className="sync-modal-body">
+          {statusBanner}
+
+
+          <ul className="sync-source-list" aria-label="Источники данных">
+            {SYNC_SOURCES.map(({ key, label }) => {
+              const progress = store.syncProgress[key];
+              const isPending = !progress || progress.status === "pending";
+              return (
+                <li
+                  key={key}
+                  className={`sync-source-item ${isPending ? "pending" : progress.status}`}
+                >
+                  <span className="sync-source-name">{label}</span>
+                  <span className="sync-source-result">
+                    {isPending ? (
+                      <span className="sync-spinner" aria-label={`Обновление: ${label}`}>
+                        <RefreshCw className="spinning" aria-hidden="true" />
+                      </span>
+                    ) : (
+                      <span className="sync-source-timestamp">
+                        {progress.display || progress.status}
+                      </span>
+                    )}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+
+        <footer className="sync-modal-footer">
+          <button
+            type="button"
+            className="button primary"
+            onClick={() => store.closeSyncModal()}
+          >
+            Закрыть
+          </button>
+        </footer>
+      </dialog>
+    </div>
+  );
 });
 
 const Dashboard = observer(function Dashboard() {
@@ -778,7 +900,7 @@ const Dashboard = observer(function Dashboard() {
   const displayedDayCount =
     store.dashboard?.days.length ?? inclusiveDateCount(store.from, store.to);
   return (
-    <main className={dayMatch ? "app blurred" : "app"}>
+    <main className={dayMatch || store.syncModalOpen ? "app blurred" : "app"}>
       <header className="topbar">
         <div>
           <p className="eyebrow">Локальный обзор</p>
@@ -843,6 +965,7 @@ const Dashboard = observer(function Dashboard() {
       </div>
 
       <Outlet />
+      {store.syncModalOpen && <SyncModal />}
     </main>
   );
 });

@@ -8,6 +8,7 @@ from .collectors import collect_rescuetime, collect_todoist
 from .config import load_config
 from .db import connect, record_source_run
 from .fitness_drive import sync_fitness_drive
+from .freshness import display_timestamp, get_source_latest
 from .importers import import_fitness_drive, import_welltory
 from .sync_worker import InvalidDateRange, sync_worker
 
@@ -111,24 +112,54 @@ def _sync_collector(config, source: str, collector, start: date, end: date, star
 
 def main(argv: list[str] | None = None) -> int:
     try:
-        with sync_worker(argv, load_config) as (config, start, end, started_at):
-            sources = [
-                _sync_bracelet(config, start, end, started_at),
-                _sync_welltory(config, start, end, started_at),
-                _sync_collector(config, "rescuetime", collect_rescuetime, start, end, started_at),
-                _sync_collector(config, "todoist", collect_todoist, start, end, started_at),
-            ]
+        with sync_worker(argv, load_config) as ctx:
+            config, start, end, started_at = ctx
+            sources = []
+
+            def run_source(source_name: str, fn):
+                res = fn()
+                sources.append(res)
+                if ctx.progress:
+                    with connect(config.database) as conn:
+                        latest = get_source_latest(conn, config.timezone, source_name)
+                    if res["status"] == "failed":
+                        display = "ошибка"
+                    elif res["status"] == "not_run" and not latest:
+                        display = "недоступен"
+                    elif latest:
+                        display = display_timestamp(latest)
+                    else:
+                        display = "нет записей"
+                    progress_event = {
+                        "type": "progress",
+                        "source": source_name,
+                        "status": res["status"],
+                        "records": res["records"],
+                        "latest": latest,
+                        "display": display,
+                    }
+                    print(json.dumps(progress_event, ensure_ascii=False), flush=True)
+                return res
+
+            run_source("bracelet", lambda: _sync_bracelet(config, start, end, started_at))
+            run_source("welltory", lambda: _sync_welltory(config, start, end, started_at))
+            run_source("rescuetime", lambda: _sync_collector(config, "rescuetime", collect_rescuetime, start, end, started_at))
+            run_source("todoist", lambda: _sync_collector(config, "todoist", collect_todoist, start, end, started_at))
     except InvalidDateRange:
         print("INVALID_DATE_RANGE", file=sys.stderr)
         return 2
     except BlockingIOError:
         print("SYNC_ALREADY_RUNNING", file=sys.stderr)
         return 75
-    print(json.dumps({
+
+    final_payload = {
         "from": start.isoformat(),
         "to": end.isoformat(),
         "sources": sources,
-    }, ensure_ascii=False, separators=(",", ":")))
+    }
+    if ctx.progress:
+        final_payload["type"] = "complete"
+    print(json.dumps(final_payload, ensure_ascii=False, separators=(",", ":")), flush=True)
     return 0
 
 

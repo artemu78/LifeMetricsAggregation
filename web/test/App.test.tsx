@@ -152,6 +152,8 @@ describe('App Component', () => {
       store.to = '2026-09-16'
       store.loading = false
       store.syncing = false
+      store.syncModalOpen = false
+      store.syncProgress = {}
       store.helpOpen = false
       store.error = null
       store.syncMessage = null
@@ -253,6 +255,134 @@ describe('App Component', () => {
     expect(screen.getByText('Загружаем календарь…')).toBeInTheDocument()
     expect(screen.getByText('Сетевая ошибка')).toBeInTheDocument()
     expect(screen.getByText('Данные успешно обновлены')).toBeInTheDocument()
+  })
+
+  it('renders SyncModal with spinners and timestamps and handles close', async () => {
+    act(() => {
+      store.syncModalOpen = true
+      store.syncing = true
+      store.syncProgress = {
+        bracelet: { source: 'bracelet', status: 'pending', latest: null, display: null },
+        welltory: { source: 'welltory', status: 'success', latest: '2026-09-15T08:30:00Z', display: '15/09/2026 08:30:00' },
+        rescuetime: { source: 'rescuetime', status: 'pending', latest: null, display: null },
+        todoist: { source: 'todoist', status: 'not_run', latest: null, display: 'недоступен' },
+      }
+    })
+
+    render(
+      <MemoryRouter initialEntries={['/']}>
+        <App />
+      </MemoryRouter>,
+    )
+
+    expect(screen.getByRole('heading', { name: 'Обновление данных' })).toBeInTheDocument()
+    expect(screen.getByText('Обновляем источники…')).toBeInTheDocument()
+    expect(screen.getByText('15/09/2026 08:30:00')).toBeInTheDocument()
+    expect(screen.getByText('недоступен')).toBeInTheDocument()
+    expect(screen.getByLabelText('Обновление: Браслет')).toBeInTheDocument()
+    expect(screen.getByLabelText('Обновление: RescueTime')).toBeInTheDocument()
+
+    // Escape closes modal
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(store.syncModalOpen).toBe(false)
+  })
+
+  it('handles focus trapping and close button in SyncModal', async () => {
+    act(() => {
+      store.syncModalOpen = true
+      store.syncing = false
+      store.syncProgress = {
+        bracelet: { source: 'bracelet', status: 'success', latest: '2026-09-15T08:00:00Z', display: '15/09/2026 08:00:00' },
+        welltory: { source: 'welltory', status: 'success', latest: '2026-09-15T08:30:00Z', display: '15/09/2026 08:30:00' },
+        rescuetime: { source: 'rescuetime', status: 'success', latest: '2026-09-15T09:00:00Z', display: '15/09/2026 09:00:00' },
+        todoist: { source: 'todoist', status: 'success', latest: '2026-09-15T10:00:00Z', display: '15/09/2026 10:00:00' },
+      }
+    })
+
+    render(
+      <MemoryRouter initialEntries={['/']}>
+        <App />
+      </MemoryRouter>,
+    )
+
+    expect(screen.getByText('Обновление завершено')).toBeInTheDocument()
+    const closeBtn = screen.getByRole('button', { name: 'Закрыть' })
+    fireEvent.click(closeBtn)
+    expect(store.syncModalOpen).toBe(false)
+  })
+
+  it('handles focus trapping, pointerdown outside, and X button in SyncModal', async () => {
+    vi.spyOn(store, 'load').mockImplementation(async () => {})
+    act(() => {
+      store.syncModalOpen = true
+      store.syncing = false
+      store.error = 'Критическая ошибка синхронизации'
+      store.syncProgress = {
+        bracelet: { source: 'bracelet', status: 'failed', latest: null, display: '' },
+      }
+    })
+
+    render(
+      <MemoryRouter initialEntries={['/']}>
+        <App />
+      </MemoryRouter>,
+    )
+
+    // Error banner shown
+    expect(screen.getByRole('alert')).toHaveTextContent('Критическая ошибка синхронизации')
+    expect(screen.getByText('failed')).toBeInTheDocument()
+
+    const modal = screen.getByRole('dialog')
+    const focusable = modal.querySelectorAll<HTMLElement>('button, [href]')
+    const first = focusable[0]
+    const last = focusable[focusable.length - 1]
+
+    // Focus trap tests
+    first.focus()
+    expect(first).toHaveFocus()
+
+    // Shift+Tab on first element wraps to last
+    fireEvent.keyDown(window, { key: 'Tab', shiftKey: true })
+    expect(last).toHaveFocus()
+
+    // Shift+Tab on last element (not first) falls through to default
+    fireEvent.keyDown(window, { key: 'Tab', shiftKey: true })
+
+    // Tab on last element wraps to first
+    fireEvent.keyDown(window, { key: 'Tab', shiftKey: false })
+    expect(first).toHaveFocus()
+
+    // Non-tab key is ignored
+    fireEvent.keyDown(window, { key: 'Shift' })
+
+    // Active element outside focusable wraps to target
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur()
+    }
+    fireEvent.keyDown(window, { key: 'Tab' })
+    expect(first).toHaveFocus()
+
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur()
+    }
+    fireEvent.keyDown(window, { key: 'Tab', shiftKey: true })
+    expect(last).toHaveFocus()
+
+    // Pointerdown inside modal does not close modal
+    fireEvent.pointerDown(modal)
+    expect(store.syncModalOpen).toBe(true)
+
+    // Pointerdown outside modal closes modal
+    fireEvent.pointerDown(document.body)
+    expect(store.syncModalOpen).toBe(false)
+
+    // Reopen and test X button
+    act(() => {
+      store.syncModalOpen = true
+    })
+    const xButton = screen.getByRole('button', { name: 'Закрыть окно обновления' })
+    fireEvent.click(xButton)
+    expect(store.syncModalOpen).toBe(false)
   })
 
   it('opens day modal when navigating to /day/:date and displays full details', async () => {

@@ -1,11 +1,18 @@
 import { makeAutoObservable, runInAction } from 'mobx'
 import type { components } from './generated/api-types'
 import { defaultDashboardWindow } from './dashboardWindow.ts'
-import { syncDashboardData } from './sync.ts'
+import { syncDashboardDataStream } from './sync.ts'
 
 export type DashboardResponse = components['schemas']['DashboardResponse']
 export type DashboardDay = components['schemas']['DashboardDay']
 export type DateRange = components['schemas']['DateRange']
+export type SourceSyncProgress = {
+  source: string
+  status: 'pending' | 'success' | 'partial' | 'failed' | 'not_run'
+  latest: string | null
+  display: string | null
+  records?: number
+}
 
 async function errorMessage(response: Response): Promise<string> {
   try {
@@ -22,6 +29,8 @@ export class DashboardStore {
   dashboard: DashboardResponse | null = null
   loading = false
   syncing = false
+  syncModalOpen = false
+  syncProgress: Record<string, SourceSyncProgress> = {}
   helpOpen = false
   error: string | null = null
   syncMessage: string | null = null
@@ -61,13 +70,35 @@ export class DashboardStore {
     }
   }
 
-  async syncAll() {
+  async syncAll(fetchRequest = fetch) {
     this.syncing = true
+    this.syncModalOpen = true
     this.error = null
     this.syncMessage = null
+    const sources = ['bracelet', 'welltory', 'rescuetime', 'todoist']
+    this.syncProgress = Object.fromEntries(
+      sources.map((source) => [
+        source,
+        { source, status: 'pending', latest: null, display: null },
+      ]),
+    )
     try {
       const body: DateRange = { from: this.from, to: this.to }
-      const result = await syncDashboardData(body)
+      const result = await syncDashboardDataStream(
+        body,
+        (event) => {
+          runInAction(() => {
+            this.syncProgress[event.source] = {
+              source: event.source,
+              status: event.status as any,
+              latest: event.latest ?? null,
+              display: event.display ?? null,
+              records: event.records,
+            }
+          })
+        },
+        fetchRequest,
+      )
       const labels: Record<string, string> = {
         bracelet: 'Браслет',
         welltory: 'Welltory',
@@ -94,6 +125,14 @@ export class DashboardStore {
         this.syncing = false
       })
     }
+  }
+
+  openSyncModal() {
+    this.syncModalOpen = true
+  }
+
+  closeSyncModal() {
+    this.syncModalOpen = false
   }
 
   toggleHelp() {

@@ -41,6 +41,9 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/DashboardSyncResponse'
+            text/event-stream:
+              schema:
+                type: string
         '400':
           $ref: '#/components/responses/BadRequest'
         '409':
@@ -309,3 +312,60 @@ components:
         details:
           type: object
           additionalProperties: true
+    SyncProgressEvent:
+      type: object
+      additionalProperties: false
+      required: [type, source, status, records]
+      properties:
+        type:
+          type: string
+          enum: [progress]
+        source:
+          $ref: '#/components/schemas/SourceName'
+        status:
+          $ref: '#/components/schemas/SourceRunStatus'
+        records:
+          type: integer
+          minimum: 0
+        latest:
+          type: [string, 'null']
+          format: date-time
+        display:
+          type: [string, 'null']
+    SyncCompleteEvent:
+      type: object
+      additionalProperties: false
+      required: [type, from, to, sources]
+      properties:
+        type:
+          type: string
+          enum: [complete]
+        from:
+          type: string
+          format: date
+        to:
+          type: string
+          format: date
+        sources:
+          type: array
+          minItems: 4
+          maxItems: 4
+          items:
+            $ref: '#/components/schemas/SourceSyncSummary'
+    SyncErrorEvent:
+      type: object
+      additionalProperties: false
+      required: [type, code, message]
+      properties:
+        type:
+          type: string
+          enum: [error]
+        code:
+          type: string
+        message:
+          type: string
+    SyncStreamEvent:
+      oneOf:
+        - $ref: '#/components/schemas/SyncProgressEvent'
+        - $ref: '#/components/schemas/SyncCompleteEvent'
+        - $ref: '#/components/schemas/SyncErrorEvent'

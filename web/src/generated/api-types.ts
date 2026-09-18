@@ -141,6 +141,32 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        SyncProgressEvent: {
+            /** @enum {string} */
+            type: "progress";
+            source: components["schemas"]["SourceName"];
+            status: components["schemas"]["SourceRunStatus"];
+            records: number;
+            /** Format: date-time */
+            latest?: string | null;
+            display?: string | null;
+        };
+        SyncCompleteEvent: {
+            /** @enum {string} */
+            type: "complete";
+            /** Format: date */
+            from: string;
+            /** Format: date */
+            to: string;
+            sources: components["schemas"]["SourceSyncSummary"][];
+        };
+        SyncErrorEvent: {
+            /** @enum {string} */
+            type: "error";
+            code: string;
+            message: string;
+        };
+        SyncStreamEvent: components["schemas"]["SyncProgressEvent"] | components["schemas"]["SyncCompleteEvent"] | components["schemas"]["SyncErrorEvent"];
     };
     responses: {
         /** @description Invalid input */
@@ -217,6 +243,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DashboardSyncResponse"];
+                    "text/event-stream": string;
                 };
             };
             400: components["responses"]["BadRequest"];
