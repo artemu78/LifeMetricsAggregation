@@ -21,7 +21,8 @@ class DiaryTest(TestCase):
         self.config = replace(load_config(Path(__file__).resolve().parents[1]),
                               database=root / 'life.db', inbox=root / 'inbox',
                               reports=root / 'data/reports', welltory_downloads=root,
-                              fitness_drive_cache=None)
+                              fitness_drive_cache=None,
+                              diary_google_doc_id='test-doc-id')
         ensure_layout(self.config)
         self.reader = MagicMock()
 

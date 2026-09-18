@@ -153,8 +153,7 @@ Build and start it:
 
 ```bash
 source .venv/bin/activate
-npm install
-npm run build
+cd web && npm install && npm run build && cd ..
 live-life-dashboard
 ```
 
@@ -168,7 +167,7 @@ TypeScript types after changing it:
 
 ```bash
 datamodel-codegen
-npm run generate:types
+cd web && npm run generate:types && cd ..
 ```
 
 The API starts the JSON workers as separate processes:
