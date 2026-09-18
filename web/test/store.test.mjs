@@ -21,6 +21,28 @@ function dashboard(generatedAt) {
   }
 }
 
+function defaultSources(braceletRecords = 1, braceletStatus = 'success') {
+  return [
+    { source: 'bracelet', status: braceletStatus, records: braceletRecords },
+    { source: 'welltory', status: 'not_run', records: 0 },
+    { source: 'rescuetime', status: 'partial', records: 10 },
+    { source: 'todoist', status: 'failed', records: 0 },
+  ]
+}
+
+function sseStreamResponse(chunks) {
+  const list = Array.isArray(chunks) ? chunks : [chunks]
+  return new Response(
+    new ReadableStream({
+      start(c) {
+        list.forEach((item) => c.enqueue(new TextEncoder().encode(item)))
+        c.close()
+      },
+    }),
+    { status: 200, headers: { 'Content-Type': 'text/event-stream' } },
+  )
+}
+
 async function waitFor(predicate) {
   for (let attempt = 0; attempt < 10; attempt += 1) {
     if (predicate()) return
@@ -157,12 +179,7 @@ test('DashboardStore syncAll formats all source status variants and handles erro
           JSON.stringify({
             from: '2026-09-10',
             to: '2026-09-15',
-            sources: [
-              { source: 'bracelet', status: 'success', records: 5 },
-              { source: 'welltory', status: 'not_run', records: 0 },
-              { source: 'rescuetime', status: 'partial', records: 10 },
-              { source: 'todoist', status: 'failed', records: 0 },
-            ],
+            sources: defaultSources(5),
           }),
           { status: 200, headers: { 'Content-Type': 'application/json' } },
         )
@@ -221,12 +238,9 @@ test('DashboardStore syncAll populates syncProgress with pending and resolved so
           JSON.stringify({
             from: '2026-09-10',
             to: '2026-09-15',
-            sources: [
-              { source: 'bracelet', status: 'success', records: 5 },
-              { source: 'welltory', status: 'not_run', records: 0 },
-              { source: 'rescuetime', status: 'partial', records: 10 },
-              { source: 'todoist', status: 'success', records: 2 },
-            ],
+            sources: defaultSources(5).map((item) =>
+              item.source === 'todoist' ? { ...item, status: 'success', records: 2 } : item,
+            ),
           }),
           { status: 200, headers: { 'Content-Type': 'application/json' } },
         )
@@ -252,24 +266,14 @@ test('DashboardStore syncAll streams progress with latest and display values and
   const originalFetch = globalThis.fetch
   try {
     const store = new DashboardStore()
-    const stream = new ReadableStream({
-      start(controller) {
-        controller.enqueue(
-          new TextEncoder().encode(
-            'data: {"type":"progress","source":"bracelet","status":"success","records":1,"latest":"2026-09-15T10:00:00Z","display":"15/09/2026 10:00:00"}\n\n' +
-            'data: {"type":"progress","source":"welltory","status":"not_run","records":0,"latest":null,"display":null}\n\n' +
-            'data: {"type":"complete","from":"2026-09-10","to":"2026-09-15","sources":[{"source":"bracelet","status":"success","records":1},{"source":"welltory","status":"not_run","records":0},{"source":"rescuetime","status":"success","records":0},{"source":"todoist","status":"success","records":0}]}\n\n',
-          ),
-        )
-        controller.close()
-      },
-    })
+    const chunks = [
+      'data: {"type":"progress","source":"bracelet","status":"success","records":1,"latest":"2026-09-15T10:00:00Z","display":"15/09/2026 10:00:00"}\n\n',
+      'data: {"type":"progress","source":"welltory","status":"not_run","records":0,"latest":null,"display":null}\n\n',
+      'data: {"type":"complete","from":"2026-09-10","to":"2026-09-15","sources":[{"source":"bracelet","status":"success","records":1},{"source":"welltory","status":"not_run","records":0},{"source":"rescuetime","status":"success","records":0},{"source":"todoist","status":"success","records":0}]}\n\n',
+    ]
     globalThis.fetch = async (url) => {
       if (typeof url === 'string' && url.includes('/api/data-sync')) {
-        return new Response(stream, {
-          status: 200,
-          headers: { 'Content-Type': 'text/event-stream' },
-        })
+        return sseStreamResponse(chunks)
       }
       return new Response(JSON.stringify(dashboard('2026-09-15T12:00:00Z')), { status: 200 })
     }

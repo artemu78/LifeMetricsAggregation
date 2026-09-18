@@ -110,7 +110,7 @@ def _is_sync_locked(lock_path: Path) -> bool:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             fcntl.flock(lock, fcntl.LOCK_UN)
             return False
-    except (BlockingIOError, OSError):
+    except OSError:
         return True
 
 

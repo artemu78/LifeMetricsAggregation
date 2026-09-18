@@ -76,6 +76,25 @@ test('syncDashboardData handles non-json error response', async () => {
   )
 })
 
+function mockSseFetch(chunks) {
+  const items = Array.isArray(chunks) ? chunks : [chunks]
+  return async () =>
+    new Response(
+      new ReadableStream({
+        start(controller) {
+          for (const item of items) {
+            controller.enqueue(new TextEncoder().encode(item))
+          }
+          controller.close()
+        },
+      }),
+      {
+        status: 200,
+        headers: { 'Content-Type': 'text/event-stream' },
+      },
+    )
+}
+
 test('syncDashboardDataStream parses SSE stream events', async () => {
   const events = []
   const streamData = [
@@ -83,21 +102,7 @@ test('syncDashboardDataStream parses SSE stream events', async () => {
     'data: {"type":"progress","source":"welltory","status":"not_run","records":0,"latest":null,"display":"недоступен"}\n\n',
     'data: {"type":"complete","from":"2026-09-13","to":"2026-09-15","sources":[{"source":"bracelet","status":"success","records":1},{"source":"welltory","status":"not_run","records":0},{"source":"rescuetime","status":"success","records":0},{"source":"todoist","status":"success","records":0}]}\n\n',
   ]
-
-  const stream = new ReadableStream({
-    start(controller) {
-      for (const chunk of streamData) {
-        controller.enqueue(new TextEncoder().encode(chunk))
-      }
-      controller.close()
-    },
-  })
-
-  const fetchMock = async () =>
-    new Response(stream, {
-      status: 200,
-      headers: { 'Content-Type': 'text/event-stream' },
-    })
+  const fetchMock = mockSseFetch(streamData)
 
   const result = await import('../src/sync.ts').then((m) =>
     m.syncDashboardDataStream(
@@ -116,22 +121,9 @@ test('syncDashboardDataStream parses SSE stream events', async () => {
 })
 
 test('syncDashboardDataStream handles error event in stream', async () => {
-  const stream = new ReadableStream({
-    start(controller) {
-      controller.enqueue(
-        new TextEncoder().encode(
-          'data: {"type":"error","code":"SYNC_FAILED","message":"Stream failed"}\n\n',
-        ),
-      )
-      controller.close()
-    },
-  })
-
-  const fetchMock = async () =>
-    new Response(stream, {
-      status: 200,
-      headers: { 'Content-Type': 'text/event-stream' },
-    })
+  const fetchMock = mockSseFetch(
+    'data: {"type":"error","code":"SYNC_FAILED","message":"Stream failed"}\n\n',
+  )
 
   const { syncDashboardDataStream } = await import('../src/sync.ts')
   await assert.rejects(
@@ -147,21 +139,8 @@ test('syncDashboardDataStream handles error event in stream', async () => {
 
 test('syncDashboardDataStream parses complete event from trailing buffer without newline', async () => {
   const events = []
-  // Chunk without trailing newline
   const trailingChunk = 'data: {"type":"complete","from":"2026-09-13","to":"2026-09-15","sources":[]}'
-  const stream = new ReadableStream({
-    start(controller) {
-      controller.enqueue(new TextEncoder().encode(': comment\ndata:\n\n'))
-      controller.enqueue(new TextEncoder().encode(trailingChunk))
-      controller.close()
-    },
-  })
-
-  const fetchMock = async () =>
-    new Response(stream, {
-      status: 200,
-      headers: { 'Content-Type': 'text/event-stream' },
-    })
+  const fetchMock = mockSseFetch([': comment\ndata:\n\n', trailingChunk])
 
   const { syncDashboardDataStream } = await import('../src/sync.ts')
   const result = await syncDashboardDataStream(
@@ -174,22 +153,9 @@ test('syncDashboardDataStream parses complete event from trailing buffer without
 })
 
 test('syncDashboardDataStream throws error when stream terminates without complete event', async () => {
-  const stream = new ReadableStream({
-    start(controller) {
-      controller.enqueue(
-        new TextEncoder().encode(
-          'data: {"type":"progress","source":"bracelet","status":"success","records":1}\n\n',
-        ),
-      )
-      controller.close()
-    },
-  })
-
-  const fetchMock = async () =>
-    new Response(stream, {
-      status: 200,
-      headers: { 'Content-Type': 'text/event-stream' },
-    })
+  const fetchMock = mockSseFetch(
+    'data: {"type":"progress","source":"bracelet","status":"success","records":1}\n\n',
+  )
 
   const { syncDashboardDataStream } = await import('../src/sync.ts')
   await assert.rejects(
@@ -272,21 +238,8 @@ test('syncDashboardDataStream falls back when response body getReader is missing
 })
 
 test('syncDashboardDataStream handles error event with default message', async () => {
-  const stream = new ReadableStream({
-    start(controller) {
-      controller.enqueue(
-        new TextEncoder().encode(
-          'data: {"type":"error"}\n\n',
-        ),
-      )
-      controller.close()
-    },
-  })
-  const fetchMock = async () =>
-    new Response(stream, {
-      status: 200,
-      headers: { 'Content-Type': 'text/event-stream' },
-    })
+  const fetchMock = mockSseFetch('data: {"type":"error"}\n\n')
+
   const { syncDashboardDataStream } = await import('../src/sync.ts')
   await assert.rejects(
     () =>
@@ -301,21 +254,10 @@ test('syncDashboardDataStream handles error event with default message', async (
 
 test('syncDashboardDataStream ignores comments and empty data lines', async () => {
   const events = []
-  const stream = new ReadableStream({
-    start(controller) {
-      controller.enqueue(
-        new TextEncoder().encode(
-          ': ping\nevent: message\ndata:\ndata:   \ndata: {"type":"progress","source":"bracelet","status":"success","records":2,"display":"обновлено"}\ndata: {"type":"complete","from":"2026-09-13","to":"2026-09-15","sources":[]}\n\n',
-        ),
-      )
-      controller.close()
-    },
-  })
-  const fetchMock = async () =>
-    new Response(stream, {
-      status: 200,
-      headers: { 'Content-Type': 'text/event-stream' },
-    })
+  const fetchMock = mockSseFetch(
+    ': ping\nevent: message\ndata:\ndata:   \ndata: {"type":"progress","source":"bracelet","status":"success","records":2,"display":"обновлено"}\ndata: {"type":"complete","from":"2026-09-13","to":"2026-09-15","sources":[]}\n\n',
+  )
+
   const { syncDashboardDataStream } = await import('../src/sync.ts')
   const result = await syncDashboardDataStream(
     { from: '2026-09-13', to: '2026-09-15' },
@@ -328,22 +270,10 @@ test('syncDashboardDataStream ignores comments and empty data lines', async () =
 })
 
 test('syncDashboardDataStream ignores unknown event types', async () => {
-  const stream = new ReadableStream({
-    start(controller) {
-      controller.enqueue(
-        new TextEncoder().encode(
-          'data: {"type":"unknown"}\n\n' +
-          'data: {"type":"complete","from":"2026-09-13","to":"2026-09-15","sources":[]}\n\n',
-        ),
-      )
-      controller.close()
-    },
-  })
-  const fetchMock = async () =>
-    new Response(stream, {
-      status: 200,
-      headers: { 'Content-Type': 'text/event-stream' },
-    })
+  const fetchMock = mockSseFetch(
+    'data: {"type":"unknown"}\n\ndata: {"type":"complete","from":"2026-09-13","to":"2026-09-15","sources":[]}\n\n',
+  )
+
   const { syncDashboardDataStream } = await import('../src/sync.ts')
   const result = await syncDashboardDataStream(
     { from: '2026-09-13', to: '2026-09-15' },
