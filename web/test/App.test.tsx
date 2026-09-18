@@ -311,6 +311,80 @@ describe('App Component', () => {
     expect(store.syncModalOpen).toBe(false)
   })
 
+  it('handles focus trapping, pointerdown outside, and X button in SyncModal', async () => {
+    vi.spyOn(store, 'load').mockImplementation(async () => {})
+    act(() => {
+      store.syncModalOpen = true
+      store.syncing = false
+      store.error = 'Критическая ошибка синхронизации'
+      store.syncProgress = {
+        bracelet: { source: 'bracelet', status: 'failed', latest: null, display: '' },
+      }
+    })
+
+    render(
+      <MemoryRouter initialEntries={['/']}>
+        <App />
+      </MemoryRouter>,
+    )
+
+    // Error banner shown
+    expect(screen.getByRole('alert')).toHaveTextContent('Критическая ошибка синхронизации')
+    expect(screen.getByText('failed')).toBeInTheDocument()
+
+    const modal = screen.getByRole('dialog')
+    const focusable = modal.querySelectorAll<HTMLElement>('button, [href]')
+    const first = focusable[0]
+    const last = focusable[focusable.length - 1]
+
+    // Focus trap tests
+    first.focus()
+    expect(first).toHaveFocus()
+
+    // Shift+Tab on first element wraps to last
+    fireEvent.keyDown(window, { key: 'Tab', shiftKey: true })
+    expect(last).toHaveFocus()
+
+    // Shift+Tab on last element (not first) falls through to default
+    fireEvent.keyDown(window, { key: 'Tab', shiftKey: true })
+
+    // Tab on last element wraps to first
+    fireEvent.keyDown(window, { key: 'Tab', shiftKey: false })
+    expect(first).toHaveFocus()
+
+    // Non-tab key is ignored
+    fireEvent.keyDown(window, { key: 'Shift' })
+
+    // Active element outside focusable wraps to target
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur()
+    }
+    fireEvent.keyDown(window, { key: 'Tab' })
+    expect(first).toHaveFocus()
+
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur()
+    }
+    fireEvent.keyDown(window, { key: 'Tab', shiftKey: true })
+    expect(last).toHaveFocus()
+
+    // Pointerdown inside modal does not close modal
+    fireEvent.pointerDown(modal)
+    expect(store.syncModalOpen).toBe(true)
+
+    // Pointerdown outside modal closes modal
+    fireEvent.pointerDown(document.body)
+    expect(store.syncModalOpen).toBe(false)
+
+    // Reopen and test X button
+    act(() => {
+      store.syncModalOpen = true
+    })
+    const xButton = screen.getByRole('button', { name: 'Закрыть окно обновления' })
+    fireEvent.click(xButton)
+    expect(store.syncModalOpen).toBe(false)
+  })
+
   it('opens day modal when navigating to /day/:date and displays full details', async () => {
     render(
       <MemoryRouter initialEntries={['/day/2026-09-15']}>

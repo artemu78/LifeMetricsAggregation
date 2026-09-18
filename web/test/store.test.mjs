@@ -248,4 +248,41 @@ test('DashboardStore syncAll populates syncProgress with pending and resolved so
   }
 })
 
+test('DashboardStore syncAll streams progress with latest and display values and nulls', async () => {
+  const originalFetch = globalThis.fetch
+  try {
+    const store = new DashboardStore()
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(
+          new TextEncoder().encode(
+            'data: {"type":"progress","source":"bracelet","status":"success","records":1,"latest":"2026-09-15T10:00:00Z","display":"15/09/2026 10:00:00"}\n\n' +
+            'data: {"type":"progress","source":"welltory","status":"not_run","records":0,"latest":null,"display":null}\n\n' +
+            'data: {"type":"complete","from":"2026-09-10","to":"2026-09-15","sources":[{"source":"bracelet","status":"success","records":1},{"source":"welltory","status":"not_run","records":0},{"source":"rescuetime","status":"success","records":0},{"source":"todoist","status":"success","records":0}]}\n\n',
+          ),
+        )
+        controller.close()
+      },
+    })
+    globalThis.fetch = async (url) => {
+      if (typeof url === 'string' && url.includes('/api/data-sync')) {
+        return new Response(stream, {
+          status: 200,
+          headers: { 'Content-Type': 'text/event-stream' },
+        })
+      }
+      return new Response(JSON.stringify(dashboard('2026-09-15T12:00:00Z')), { status: 200 })
+    }
+
+    await store.syncAll()
+    assert.equal(store.syncProgress.bracelet.display, '15/09/2026 10:00:00')
+    assert.equal(store.syncProgress.bracelet.latest, '2026-09-15T10:00:00Z')
+    assert.equal(store.syncProgress.welltory.display, null)
+    assert.equal(store.syncProgress.welltory.latest, null)
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+
 

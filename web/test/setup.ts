@@ -26,6 +26,18 @@ vi.mock('recharts', async (importOriginal) => {
         { className: 'recharts-responsive-container', style: { width: 800, height: 400 } },
         children,
       ),
+    PieChart: (props: any) => {
+      React.Children.forEach(props?.children, (child: any) => {
+        if (typeof child?.props?.formatter === 'function') {
+          try {
+            child.props.formatter(3600)
+          } catch {
+            // ignore
+          }
+        }
+      })
+      return React.createElement(original.PieChart, props)
+    },
     Tooltip: (props: any) => {
       if (typeof props?.formatter === 'function') {
         try {

@@ -145,4 +145,237 @@ test('syncDashboardDataStream handles error event in stream', async () => {
   )
 })
 
+test('syncDashboardDataStream parses complete event from trailing buffer without newline', async () => {
+  const events = []
+  // Chunk without trailing newline
+  const trailingChunk = 'data: {"type":"complete","from":"2026-09-13","to":"2026-09-15","sources":[]}'
+  const stream = new ReadableStream({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode(': comment\ndata:\n\n'))
+      controller.enqueue(new TextEncoder().encode(trailingChunk))
+      controller.close()
+    },
+  })
+
+  const fetchMock = async () =>
+    new Response(stream, {
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream' },
+    })
+
+  const { syncDashboardDataStream } = await import('../src/sync.ts')
+  const result = await syncDashboardDataStream(
+    { from: '2026-09-13', to: '2026-09-15' },
+    (ev) => events.push(ev),
+    fetchMock,
+  )
+
+  assert.equal(result.from, '2026-09-13')
+})
+
+test('syncDashboardDataStream throws error when stream terminates without complete event', async () => {
+  const stream = new ReadableStream({
+    start(controller) {
+      controller.enqueue(
+        new TextEncoder().encode(
+          'data: {"type":"progress","source":"bracelet","status":"success","records":1}\n\n',
+        ),
+      )
+      controller.close()
+    },
+  })
+
+  const fetchMock = async () =>
+    new Response(stream, {
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream' },
+    })
+
+  const { syncDashboardDataStream } = await import('../src/sync.ts')
+  await assert.rejects(
+    () =>
+      syncDashboardDataStream(
+        { from: '2026-09-13', to: '2026-09-15' },
+        () => {},
+        fetchMock,
+      ),
+    { message: 'Синхронизация не завершилась корректно' },
+  )
+})
+
+test('syncDashboardDataStream throws error on non-ok HTTP response', async () => {
+  const fetchMock = async () =>
+    new Response(JSON.stringify({ message: 'Ошибка сети' }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' },
+    })
+  const { syncDashboardDataStream } = await import('../src/sync.ts')
+  await assert.rejects(
+    () =>
+      syncDashboardDataStream(
+        { from: '2026-09-13', to: '2026-09-15' },
+        () => {},
+        fetchMock,
+      ),
+    { message: 'Ошибка сети' },
+  )
+})
+
+test('syncDashboardDataStream falls back to json response when not SSE', async () => {
+  const events = []
+  const jsonBody = {
+    from: '2026-09-13',
+    to: '2026-09-15',
+    sources: [
+      { source: 'bracelet', status: 'success', records: 5 },
+      { source: 'welltory', status: 'not_run', records: 0 },
+    ],
+  }
+  const fetchMock = async () =>
+    new Response(JSON.stringify(jsonBody), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    })
+  const { syncDashboardDataStream } = await import('../src/sync.ts')
+  const result = await syncDashboardDataStream(
+    { from: '2026-09-13', to: '2026-09-15' },
+    (ev) => events.push(ev),
+    fetchMock,
+  )
+  assert.deepEqual(result, jsonBody)
+  assert.equal(events.length, 2)
+  assert.equal(events[0].display, 'обновлено')
+  assert.equal(events[1].display, 'not_run')
+})
+
+test('syncDashboardDataStream falls back when response body getReader is missing', async () => {
+  const jsonBody = {
+    from: '2026-09-13',
+    to: '2026-09-15',
+    sources: [{ source: 'todoist', status: 'failed', records: 0 }],
+  }
+  const fetchMock = async () => ({
+    ok: true,
+    headers: new Headers({ 'Content-Type': 'text/event-stream' }),
+    body: null,
+    json: async () => jsonBody,
+  })
+  const { syncDashboardDataStream } = await import('../src/sync.ts')
+  const events = []
+  const result = await syncDashboardDataStream(
+    { from: '2026-09-13', to: '2026-09-15' },
+    (ev) => events.push(ev),
+    fetchMock,
+  )
+  assert.deepEqual(result, jsonBody)
+  assert.equal(events[0].display, 'failed')
+})
+
+test('syncDashboardDataStream handles error event with default message', async () => {
+  const stream = new ReadableStream({
+    start(controller) {
+      controller.enqueue(
+        new TextEncoder().encode(
+          'data: {"type":"error"}\n\n',
+        ),
+      )
+      controller.close()
+    },
+  })
+  const fetchMock = async () =>
+    new Response(stream, {
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream' },
+    })
+  const { syncDashboardDataStream } = await import('../src/sync.ts')
+  await assert.rejects(
+    () =>
+      syncDashboardDataStream(
+        { from: '2026-09-13', to: '2026-09-15' },
+        () => {},
+        fetchMock,
+      ),
+    { message: 'Ошибка синхронизации' },
+  )
+})
+
+test('syncDashboardDataStream ignores comments and empty data lines', async () => {
+  const events = []
+  const stream = new ReadableStream({
+    start(controller) {
+      controller.enqueue(
+        new TextEncoder().encode(
+          ': ping\nevent: message\ndata:\ndata:   \ndata: {"type":"progress","source":"bracelet","status":"success","records":2,"display":"обновлено"}\ndata: {"type":"complete","from":"2026-09-13","to":"2026-09-15","sources":[]}\n\n',
+        ),
+      )
+      controller.close()
+    },
+  })
+  const fetchMock = async () =>
+    new Response(stream, {
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream' },
+    })
+  const { syncDashboardDataStream } = await import('../src/sync.ts')
+  const result = await syncDashboardDataStream(
+    { from: '2026-09-13', to: '2026-09-15' },
+    (ev) => events.push(ev),
+    fetchMock,
+  )
+  assert.equal(events.length, 1)
+  assert.equal(events[0].source, 'bracelet')
+  assert.equal(result.from, '2026-09-13')
+})
+
+test('syncDashboardDataStream ignores unknown event types', async () => {
+  const stream = new ReadableStream({
+    start(controller) {
+      controller.enqueue(
+        new TextEncoder().encode(
+          'data: {"type":"unknown"}\n\n' +
+          'data: {"type":"complete","from":"2026-09-13","to":"2026-09-15","sources":[]}\n\n',
+        ),
+      )
+      controller.close()
+    },
+  })
+  const fetchMock = async () =>
+    new Response(stream, {
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream' },
+    })
+  const { syncDashboardDataStream } = await import('../src/sync.ts')
+  const result = await syncDashboardDataStream(
+    { from: '2026-09-13', to: '2026-09-15' },
+    () => {},
+    fetchMock,
+  )
+  assert.equal(result.from, '2026-09-13')
+})
+
+test('syncDashboardDataStream handles missing Content-Type header', async () => {
+  const jsonBody = {
+    from: '2026-09-13',
+    to: '2026-09-15',
+    sources: [],
+  }
+  const fetchMock = async () => ({
+    ok: true,
+    headers: null,
+    body: null,
+    json: async () => jsonBody,
+  })
+  const { syncDashboardDataStream } = await import('../src/sync.ts')
+  const result = await syncDashboardDataStream(
+    { from: '2026-09-13', to: '2026-09-15' },
+    () => {},
+    fetchMock,
+  )
+  assert.deepEqual(result, jsonBody)
+})
+
+
+
+
+
 
