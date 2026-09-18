@@ -122,13 +122,14 @@ def canonical_openapi() -> dict:
 
 app.openapi = canonical_openapi
 
+INDEX_HTML = "index.html"
 STATIC = ROOT / "web" / "dist"
-if not (STATIC / "index.html").exists() and (ROOT / "web-dist" / "index.html").exists():
+if not (STATIC / INDEX_HTML).exists() and (ROOT / "web-dist" / INDEX_HTML).exists():
     STATIC = ROOT / "web-dist"
 
 
 def _frontend() -> FileResponse | HTMLResponse:
-    index = STATIC / "index.html"
+    index = STATIC / INDEX_HTML
     if index.exists():
         return FileResponse(index)
     return HTMLResponse("<h1>Live Life</h1><p>Run npm run build in web/ to create the dashboard.</p>")

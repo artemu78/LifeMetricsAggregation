@@ -4,9 +4,15 @@ import { vi } from 'vitest'
 
 // Polyfill ResizeObserver for JSDOM
 globalThis.ResizeObserver = class ResizeObserver {
-  observe() {}
-  unobserve() {}
-  disconnect() {}
+  observe() {
+    // Mock implementation for JSDOM tests
+  }
+  unobserve() {
+    // Mock implementation for JSDOM tests
+  }
+  disconnect() {
+    // Mock implementation for JSDOM tests
+  }
 }
 
 // Mock ResponsiveContainer and Tooltip for Recharts in JSDOM environment
