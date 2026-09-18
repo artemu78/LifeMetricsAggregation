@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [main]
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   frontend:
     name: Frontend (Tests & Coverage)
@@ -25,7 +28,7 @@ jobs:
           cache-dependency-path: web/package-lock.json
 
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --ignore-scripts
 
       - name: Verify generated TypeScript types
         run: npm run check:types
@@ -52,8 +55,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install -r requirements-dev.txt
-          pip install --no-deps -e .
+          pip install --only-binary :all: -r requirements-dev.txt
 
       - name: Verify generated Python API models
         run: |
@@ -61,4 +63,6 @@ jobs:
           git diff --exit-code -- live_life/api_models.py
 
       - name: Run Python tests
+        env:
+          PYTHONPATH: .
         run: python -m unittest discover tests
