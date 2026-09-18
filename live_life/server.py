@@ -102,74 +102,69 @@ def dashboard(
 SYNC_ALREADY_RUNNING_MESSAGE = "Обновление данных уже выполняется."
 
 
-def _stream_sync(start: date, end: date, *, timeout: int) -> StreamingResponse | JSONResponse:
-    lock_path = ROOT / ".live_life.data_sync.lock"
-    if lock_path.exists():
-        try:
-            with lock_path.open("r+") as lock:
-                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                fcntl.flock(lock, fcntl.LOCK_UN)
-        except (BlockingIOError, OSError):
-            return _error(409, "SYNC_ALREADY_RUNNING", SYNC_ALREADY_RUNNING_MESSAGE)
+def _is_sync_locked(lock_path: Path) -> bool:
+    if not lock_path.exists():
+        return False
+    try:
+        with lock_path.open("r+") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            fcntl.flock(lock, fcntl.LOCK_UN)
+            return False
+    except (BlockingIOError, OSError):
+        return True
 
-    def event_generator():
-        proc = subprocess.Popen(
-            [
-                sys.executable,
-                "-m",
-                "live_life.data_sync_json",
-                "--from",
-                start.isoformat(),
-                "--to",
-                end.isoformat(),
-                "--progress",
-            ],
-            cwd=ROOT,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            bufsize=1,
-        )
-        try:
-            if proc.stdout is not None:
-                for line in iter(proc.stdout.readline, ""):
-                    line = line.strip()
-                    if not line:
-                        continue
+
+def _stream_sync_error_event(code: str, message: str) -> str:
+    err = json.dumps({"type": "error", "code": code, "message": message}, ensure_ascii=False)
+    return f"data: {err}\n\n"
+
+
+def _stream_sync_events(start: date, end: date, *, timeout: int):
+    proc = subprocess.Popen(
+        [
+            sys.executable,
+            "-m",
+            "live_life.data_sync_json",
+            "--from",
+            start.isoformat(),
+            "--to",
+            end.isoformat(),
+            "--progress",
+        ],
+        cwd=ROOT,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        bufsize=1,
+    )
+    try:
+        if proc.stdout is not None:
+            for line in iter(proc.stdout.readline, ""):
+                line = line.strip()
+                if line:
                     yield f"data: {line}\n\n"
-            proc.wait(timeout=timeout)
-            if proc.returncode == 75:
-                err = json.dumps(
-                    {"type": "error", "code": "SYNC_ALREADY_RUNNING", "message": SYNC_ALREADY_RUNNING_MESSAGE},
-                    ensure_ascii=False,
-                )
-                yield f"data: {err}\n\n"
-            elif proc.returncode != 0:
-                err = json.dumps(
-                    {"type": "error", "code": "SYNC_FAILED", "message": "Данные не обновлены."},
-                    ensure_ascii=False,
-                )
-                yield f"data: {err}\n\n"
-        except subprocess.TimeoutExpired:
+        proc.wait(timeout=timeout)
+        if proc.returncode == 75:
+            yield _stream_sync_error_event("SYNC_ALREADY_RUNNING", SYNC_ALREADY_RUNNING_MESSAGE)
+        elif proc.returncode != 0:
+            yield _stream_sync_error_event("SYNC_FAILED", "Данные не обновлены.")
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        yield _stream_sync_error_event("SYNC_TIMEOUT", "Обновление данных заняло слишком много времени.")
+    except Exception as exc:
+        proc.kill()
+        yield _stream_sync_error_event("SYNC_FAILED", str(exc))
+    finally:
+        if proc.poll() is None:
             proc.kill()
-            err = json.dumps(
-                {"type": "error", "code": "SYNC_TIMEOUT", "message": "Обновление данных заняло слишком много времени."},
-                ensure_ascii=False,
-            )
-            yield f"data: {err}\n\n"
-        except Exception as exc:
-            proc.kill()
-            err = json.dumps(
-                {"type": "error", "code": "SYNC_FAILED", "message": str(exc)},
-                ensure_ascii=False,
-            )
-            yield f"data: {err}\n\n"
-        finally:
-            if proc.poll() is None:
-                proc.kill()
+
+
+def _stream_sync(start: date, end: date, *, timeout: int) -> StreamingResponse | JSONResponse:
+    if _is_sync_locked(ROOT / ".live_life.data_sync.lock"):
+        return _error(409, "SYNC_ALREADY_RUNNING", SYNC_ALREADY_RUNNING_MESSAGE)
 
     return StreamingResponse(
-        event_generator(),
+        _stream_sync_events(start, end, timeout=timeout),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -177,6 +172,7 @@ def _stream_sync(start: date, end: date, *, timeout: int) -> StreamingResponse |
             "X-Accel-Buffering": "no",
         },
     )
+
 
 
 @app.post("/api/data-sync", response_model=DashboardSyncResponse)
