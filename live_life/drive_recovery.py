@@ -42,44 +42,58 @@ class DriveFailure(Exception):
         self.http_status = http_status
 
 
-def classify(exc):
-    if isinstance(exc, DriveFailure):
-        return exc
+def _refresh_error_reason(exc: RefreshError):
     reason = None
-    status = None
+    for arg in exc.args:
+        if isinstance(arg, dict):
+            reason = arg.get("error")
+    # OAuth libraries can include only a formatted error string.
+    if not reason and exc.args and isinstance(exc.args[0], str):
+        return exc.args[0].split(":", 1)[0]
+    return reason
+
+
+def _http_error_details(exc: HttpError):
+    status = exc.resp.status
+    try:
+        body = json.loads(exc.content).get("error", {})
+        entries = body.get("errors", []) + body.get("details", [])
+        reason = next(
+            (
+                entry.get("reason")
+                for entry in entries
+                if entry.get("reason")
+                in {
+                    "accessNotConfigured", "SERVICE_DISABLED", "rateLimitExceeded",
+                    "userRateLimitExceeded", "insufficientPermissions",
+                    "ACCESS_TOKEN_SCOPE_INSUFFICIENT",
+                }
+            ),
+            None,
+        )
+    except (ValueError, AttributeError, TypeError):
+        reason = None
+    return reason, status
+
+
+def _failure_details(exc):
     if isinstance(exc, RefreshError):
-        for arg in exc.args:
-            if isinstance(arg, dict):
-                reason = arg.get("error")
-        # OAuth libraries can include only a formatted error string.
-        if not reason and exc.args and isinstance(exc.args[0], str):
-            reason = exc.args[0].split(":", 1)[0]
-    elif isinstance(exc, HttpError):
-        status = exc.resp.status
-        try:
-            body = json.loads(exc.content).get("error", {})
-            reasons = [entry.get("reason") for entry in body.get("errors", [])]
-            reasons += [entry.get("reason") for entry in body.get("details", [])]
-            reason = next(
-                (
-                    r
-                    for r in reasons
-                    if r
-                    in {
-                        "accessNotConfigured",
-                        "SERVICE_DISABLED",
-                        "rateLimitExceeded",
-                        "userRateLimitExceeded",
-                        "insufficientPermissions",
-                        "ACCESS_TOKEN_SCOPE_INSUFFICIENT",
-                    }
-                ),
-                None,
-            )
-        except (ValueError, AttributeError, TypeError):
-            pass
-    else:
-        reason = getattr(exc, "error", None)  # oauthlib's structured OAuth2Error
+        return _refresh_error_reason(exc), None
+    if isinstance(exc, HttpError):
+        return _http_error_details(exc)
+    return getattr(exc, "error", None), None  # oauthlib's structured OAuth2Error
+
+
+def _is_temporary_failure(exc, reason, status):
+    return any((
+        bool(status and (status >= 500 or status == 429)),
+        reason in {"rateLimitExceeded", "userRateLimitExceeded", "temporarily_unavailable", "server_error"},
+        getattr(exc, "retryable", False),
+        isinstance(exc, (TransportError, RequestsConnectionError, Timeout, TimeoutError, ConnectionError, ServerNotFoundError)),
+    ))
+
+
+def _problem_for(exc, reason, status):
     allowed = {
         "mismatching_state",
         "invalid_grant",
@@ -136,43 +150,14 @@ def classify(exc):
                 "Проверьте Test users и Audience в Google Auth Platform. Для рабочего аккаунта обратитесь к администратору. При отмене входа попробуйте подключиться снова."
             ],
         )
-    elif (
-        reason
-        in {
-            "invalid_grant",
-            "insufficientPermissions",
-            "ACCESS_TOKEN_SCOPE_INSUFFICIENT",
-        }
-        or status == 401
-    ):
+    elif reason in {"invalid_grant", "insufficientPermissions", "ACCESS_TOKEN_SCOPE_INSUFFICIENT"} or status == 401:
         problem = issue(
             "GOOGLE_RECONNECT_REQUIRED",
             "Разрешение Google истекло, отозвано или не включает чтение Drive. Подключите аккаунт заново.",
             "reconnect",
             RECONNECT_STEPS,
         )
-    elif (
-        (status and (status >= 500 or status == 429))
-        or reason
-        in {
-            "rateLimitExceeded",
-            "userRateLimitExceeded",
-            "temporarily_unavailable",
-            "server_error",
-        }
-        or getattr(exc, "retryable", False)
-        or isinstance(
-            exc,
-            (
-                TransportError,
-                RequestsConnectionError,
-                Timeout,
-                TimeoutError,
-                ConnectionError,
-                ServerNotFoundError,
-            ),
-        )
-    ):
+    elif _is_temporary_failure(exc, reason, status):
         problem = issue(
             "GOOGLE_TEMPORARY_FAILURE",
             "Google Drive временно недоступен. Автоматические повторные попытки не помогли.",
@@ -213,7 +198,22 @@ def classify(exc):
                 "Повторите импорт. Если ошибка остаётся, проверьте журнал data/logs/bracelet.jsonl."
             ],
         )
-    return DriveFailure(problem, reason=reason, http_status=status)
+    return problem
+
+
+def classify(exc):
+    if isinstance(exc, DriveFailure):
+        return exc
+    reason, status = _failure_details(exc)
+    allowed = {
+        "mismatching_state", "invalid_grant", "invalid_client", "deleted_client",
+        "unauthorized_client", "access_denied", "admin_policy_enforced", "org_internal",
+        "invalid_scope", "temporarily_unavailable", "server_error", "accessNotConfigured",
+        "SERVICE_DISABLED", "rateLimitExceeded", "userRateLimitExceeded",
+        "insufficientPermissions", "ACCESS_TOKEN_SCOPE_INSUFFICIENT",
+    }
+    reason = reason if isinstance(reason, str) and reason in allowed else None
+    return DriveFailure(_problem_for(exc, reason, status), reason=reason, http_status=status)
 
 
 def atomic_private_write(path: Path, content: str):

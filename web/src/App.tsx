@@ -805,7 +805,7 @@ export const SyncModal = observer(function SyncModal() {
       </div>
     );
   } else if (Object.values(store.syncProgress).some(item => item.status === "failed" || item.status === "not_run" || item.status === "partial")) {
-    statusBanner = <div className="sync-status-banner error" role="status">Обновление завершено не для всех источников</div>;
+    statusBanner = <output className="sync-status-banner error">Обновление завершено не для всех источников</output>;
   } else {
     statusBanner = (
       <div className="sync-status-banner success">

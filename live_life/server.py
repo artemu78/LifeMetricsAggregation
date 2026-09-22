@@ -172,8 +172,8 @@ def _stream_sync_error_event(code: str, message: str) -> str:
     return f"data: {err}\n\n"
 
 
-def _stream_sync_events(start: date, end: date, *, timeout: int):
-    proc = subprocess.Popen(
+def _start_sync_process(start: date, end: date):
+    return subprocess.Popen(
         [
             sys.executable,
             "-m",
@@ -190,6 +190,9 @@ def _stream_sync_events(start: date, end: date, *, timeout: int):
         text=True,
         bufsize=1,
     )
+
+
+def _start_sync_reader(proc):
     lines = queue.Queue()
 
     def read_output():
@@ -201,29 +204,59 @@ def _stream_sync_events(start: date, end: date, *, timeout: int):
             lines.put(None)
 
     threading.Thread(target=read_output, daemon=True).start()
+    return lines
+
+
+def _stream_sync_output(lines, proc, *, timeout: int):
     deadline = time.monotonic() + timeout
-    try:
-        while True:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise subprocess.TimeoutExpired(proc.args, timeout)
+        try:
+            line = lines.get(timeout=min(remaining, 10))
+        except queue.Empty:
+            if time.monotonic() >= deadline:
                 raise subprocess.TimeoutExpired(proc.args, timeout)
+            yield ": keep-alive\n\n"
+            continue
+        if line is None:
+            return deadline
+        line = line.strip()
+        if line:
+            yield f"data: {line}\n\n"
+
+
+def _sync_exit_event(proc, deadline):
+    proc.wait(timeout=max(0.001, deadline - time.monotonic()))
+    if proc.returncode == 75:
+        return _stream_sync_error_event("SYNC_ALREADY_RUNNING", SYNC_ALREADY_RUNNING_MESSAGE)
+    if proc.returncode != 0:
+        return _stream_sync_error_event("SYNC_FAILED", "Данные не обновлены. Проверьте журнал data/logs/bracelet.jsonl.")
+    return None
+
+
+def _stop_sync_process(proc):
+    if proc.poll() is None:
+        proc.kill()
+    proc.wait(timeout=5)
+    if proc.stdout is not None:
+        proc.stdout.close()
+
+
+def _stream_sync_events(start: date, end: date, *, timeout: int):
+    proc = _start_sync_process(start, end)
+    lines = _start_sync_reader(proc)
+    try:
+        stream = _stream_sync_output(lines, proc, timeout=timeout)
+        while True:
             try:
-                line = lines.get(timeout=min(remaining, 10))
-            except queue.Empty:
-                if time.monotonic() >= deadline:
-                    raise subprocess.TimeoutExpired(proc.args, timeout)
-                yield ": keep-alive\n\n"
-                continue
-            if line is None:
+                yield next(stream)
+            except StopIteration as completed:
+                event = _sync_exit_event(proc, completed.value)
+                if event:
+                    yield event
                 break
-            line = line.strip()
-            if line:
-                yield f"data: {line}\n\n"
-        proc.wait(timeout=max(0.001, deadline - time.monotonic()))
-        if proc.returncode == 75:
-            yield _stream_sync_error_event("SYNC_ALREADY_RUNNING", SYNC_ALREADY_RUNNING_MESSAGE)
-        elif proc.returncode != 0:
-            yield _stream_sync_error_event("SYNC_FAILED", "Данные не обновлены. Проверьте журнал data/logs/bracelet.jsonl.")
     except subprocess.TimeoutExpired:
         proc.kill()
         yield _stream_sync_error_event("SYNC_TIMEOUT", "Обновление данных заняло слишком много времени. Повторите обновление.")
@@ -231,11 +264,7 @@ def _stream_sync_events(start: date, end: date, *, timeout: int):
         proc.kill()
         yield _stream_sync_error_event("SYNC_FAILED", "Не удалось завершить обновление данных.")
     finally:
-        if proc.poll() is None:
-            proc.kill()
-        proc.wait(timeout=5)
-        if proc.stdout is not None:
-            proc.stdout.close()
+        _stop_sync_process(proc)
 
 
 def _stream_sync(start: date, end: date, *, timeout: int) -> StreamingResponse | JSONResponse:

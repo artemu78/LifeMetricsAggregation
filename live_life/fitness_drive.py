@@ -82,7 +82,7 @@ class GoogleDriveReader:
         items: list[dict[str, str]] = []
         page_token = None
         while True:
-            response = perform(self.config, "list", lambda: (
+            response = perform(self.config, "list", lambda page_token=page_token: (
                 self.service.files()
                 .list(
                     q=f"'{folder_id}' in parents and trashed = false",

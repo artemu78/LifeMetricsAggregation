@@ -14,11 +14,13 @@ async function connectionRequest(url: string, init?: RequestInit): Promise<Conne
   return response.json()
 }
 
-export function DriveRecovery({ issue, syncing, retry }: {
+type DriveRecoveryProps = Readonly<{
   issue?: Issue | null
   syncing: boolean
   retry: () => void
-}) {
+}>
+
+export function DriveRecovery({ issue, syncing, retry }: DriveRecoveryProps) {
   const [connection, setConnection] = useState<Connection>({ status: 'idle' })
   const [message, setMessage] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -93,12 +95,10 @@ export function DriveRecovery({ issue, syncing, retry }: {
         {connection.status === 'success' ? (
           <p>Google Drive подключён. Нажмите «Повторить обновление», чтобы загрузить данные браслета.</p>
         ) : (
-          <>
-            <p>{problem?.message ?? 'Не удалось обновить браслет. Подключите Google Drive или проверьте настройки.'}</p>
-          </>
+          <p>{problem?.message ?? 'Не удалось обновить браслет. Подключите Google Drive или проверьте настройки.'}</p>
         )}
         {pending && <p>Нажмите «Продолжить вход в Google», завершите вход в отдельной вкладке и вернитесь сюда. Сеанс действует 3 минуты.</p>}
-        {message && <p role="status">{message}</p>}
+        {message && <output>{message}</output>}
       </div>
       <div className="drive-recovery-actions">
         <button className="button" disabled={disabled} onClick={() => void connect()}>
@@ -122,7 +122,7 @@ export function DriveRecovery({ issue, syncing, retry }: {
           <li>В <a href="https://console.cloud.google.com/auth/clients" target="_blank" rel="noreferrer">Clients</a> создайте OAuth client типа Desktop app, скачайте JSON и выберите его ниже. Android или Web application здесь не подходят.</li>
           <li>Нажмите «Подключить Google Drive», завершите вход и повторите обновление. Выберите аккаунт, которому доступна папка Reva Health Exporter.</li>
         </ol>
-        <label className="drive-client-upload">JSON OAuth-клиента
+        <label className="drive-client-upload">JSON OAuth-клиента{' '}
           <input type="file" accept=".json,application/json" disabled={disabled} onChange={event => {
             const file = event.currentTarget.files?.[0]
             event.currentTarget.value = ''
