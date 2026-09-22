@@ -66,7 +66,7 @@ Calories, Exercise, Resting heart rate, and Oxygen saturation.
 One-time setup:
 
 1. In Google Cloud, create a Desktop OAuth client with Drive API access.
-2. Save its downloaded JSON as `private/google-drive-client-secret.json`.
+2. Save its downloaded JSON as `private/google-drive-client.json`.
 3. Install the project and authorize read-only Drive access:
 
 ```bash
@@ -198,7 +198,7 @@ The virtual environment is required because the default system Python does
 not currently have the Google libraries. On a fresh installation, install them
 with `python3 -m pip install -e .` inside the activated environment.
 
-The diary reuses `private/google-drive-client-secret.json` and
+The diary reuses `private/google-drive-client.json` and
 `private/google-drive-token.json`, configured through `GOOGLE_DRIVE_CLIENT_SECRET_FILE` and
 `GOOGLE_DRIVE_TOKEN_FILE` in `.env`. No additional
 API, credential file, document sharing, or OAuth scope is needed. If access is
