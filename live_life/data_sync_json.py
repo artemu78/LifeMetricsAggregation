@@ -8,6 +8,7 @@ from .collectors import collect_rescuetime, collect_todoist
 from .config import load_config
 from .db import connect, record_source_run
 from .fitness_drive import sync_fitness_drive
+from .drive_recovery import issue, report_failure, log_event, RECONNECT_STEPS
 from .freshness import display_timestamp, get_source_latest
 from .importers import import_fitness_drive, import_welltory
 from .sync_worker import InvalidDateRange, sync_worker
@@ -45,13 +46,17 @@ def _summary_status(statuses: list[str]) -> str:
 
 
 def _sync_bracelet(config, start: date, end: date, started_at: str) -> dict:
+    problem = None
+    log_event(config, "started", stage="sync", fromDate=start.isoformat(), toDate=end.isoformat())
     try:
         sync = sync_fitness_drive(config, start, end)
         unavailable = sync.get("skipped_not_configured") or sync.get("skipped_not_authorized")
         if unavailable:
             status = "not_run"
             records = 0
-            details = {"unavailable": True}
+            problem = (issue("GOOGLE_DRIVE_NOT_CONFIGURED", "Папка экспортов браслета не настроена.", "configure", ["Укажите GOOGLE_DRIVE_FOLDER_ID в .env: это идентификатор папки с экспортами Reva Health Exporter в Google Drive."])
+                       if sync.get("skipped_not_configured") else issue("GOOGLE_RECONNECT_REQUIRED", "Подключите Google Drive.", "reconnect", RECONNECT_STEPS))
+            details = {"unavailable": True, "issue": problem}
         else:
             imported = import_fitness_drive(config)
             status = "partial" if sync.get("missing_files") else "success"
@@ -63,11 +68,12 @@ def _sync_bracelet(config, start: date, end: date, started_at: str) -> dict:
     except Exception as exc:
         status = "failed"
         records = 0
-        details = {"errorType": type(exc).__name__}
-        print(f"{type(exc).__name__}: bracelet synchronization failed", file=sys.stderr)
+        problem = report_failure(config, exc)
+        details = {"errorType": type(exc).__name__, "issue": problem}
     for day in _days(start, end):
         _record(config, "bracelet", day, status, started_at, details)
-    return {"source": "bracelet", "status": status, "records": records}
+    log_event(config, "finished", stage="sync", status=status, records=records)
+    return {"source": "bracelet", "status": status, "records": records, **({"issue": problem} if problem else {})}
 
 
 def _sync_welltory(config, start: date, end: date, started_at: str) -> dict:
@@ -138,6 +144,8 @@ def main(argv: list[str] | None = None) -> int:
                         "latest": latest,
                         "display": display,
                     }
+                    if res.get("issue"):
+                        progress_event["issue"] = res["issue"]
                     print(json.dumps(progress_event, ensure_ascii=False), flush=True)
                 return res
 

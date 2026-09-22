@@ -9,6 +9,7 @@ import re
 
 from .config import Config
 from .db import connect
+from .drive_recovery import DriveFailure, issue, RECONNECT_STEPS, atomic_private_write, perform
 
 
 FOLDER_MIME_TYPE = "application/vnd.google-apps.folder"
@@ -44,31 +45,36 @@ def authorize_fitness_drive(config: Config) -> Path:
     flow = InstalledAppFlow.from_client_secrets_file(
         str(config.fitness_drive_client_secret), [DRIVE_READONLY_SCOPE]
     )
-    credentials = flow.run_local_server(port=0)
+    credentials = flow.run_local_server(port=0, timeout_seconds=180, prompt="consent", access_type="offline")
     config.fitness_drive_token.parent.mkdir(parents=True, exist_ok=True)
-    config.fitness_drive_token.write_text(credentials.to_json(), encoding="utf-8")
+    atomic_private_write(config.fitness_drive_token, credentials.to_json())
     return config.fitness_drive_token
 
 
 class GoogleDriveReader:
     def __init__(self, config: Config):
         """Load and refresh saved credentials, then initialize the read-only Drive client."""
+        self.config = config
         Request, Credentials, _, build, media_downloader = _google_modules()
         if not config.fitness_drive_token or not config.fitness_drive_token.exists():
-            raise RuntimeError(
-                "Google Drive is not authorized. Run `python3 -m live_life authorize-fitness-drive`."
+            raise DriveFailure(issue("GOOGLE_RECONNECT_REQUIRED", "Google Drive не подключён. Войдите в аккаунт с экспортами браслета.", "reconnect", RECONNECT_STEPS))
+        try:
+            credentials = Credentials.from_authorized_user_file(
+                str(config.fitness_drive_token), [DRIVE_READONLY_SCOPE]
             )
-        credentials = Credentials.from_authorized_user_file(
-            str(config.fitness_drive_token), [DRIVE_READONLY_SCOPE]
-        )
-        if credentials.expired and credentials.refresh_token:
-            credentials.refresh(Request())
-            config.fitness_drive_token.write_text(credentials.to_json(), encoding="utf-8")
+        except (ValueError, KeyError):
+            raise DriveFailure(issue("GOOGLE_RECONNECT_REQUIRED", "Сохранённое разрешение Google повреждено. Подключите Drive заново.", "reconnect", RECONNECT_STEPS)) from None
+        if not credentials.valid and credentials.refresh_token:
+            request = Request()
+            perform(config, "refresh", lambda: credentials.refresh(
+                lambda *args, **kwargs: request(*args, **{**kwargs, "timeout": 20})
+            ))
+            atomic_private_write(config.fitness_drive_token, credentials.to_json())
         if not credentials.valid:
-            raise RuntimeError(
-                "Google Drive authorization is invalid. Run `python3 -m live_life authorize-fitness-drive`."
-            )
-        self.service = build("drive", "v3", credentials=credentials, cache_discovery=False)
+            raise DriveFailure(issue("GOOGLE_RECONNECT_REQUIRED", "Разрешение Google недействительно. Подключите Drive заново.", "reconnect", RECONNECT_STEPS))
+        from google_auth_httplib2 import AuthorizedHttp
+        import httplib2
+        self.service = build("drive", "v3", http=AuthorizedHttp(credentials, http=httplib2.Http(timeout=20)), cache_discovery=False)
         self.media_downloader = media_downloader
 
     def list_children(self, folder_id: str) -> list[dict[str, str]]:
@@ -76,7 +82,7 @@ class GoogleDriveReader:
         items: list[dict[str, str]] = []
         page_token = None
         while True:
-            response = (
+            response = perform(self.config, "list", lambda page_token=page_token: (
                 self.service.files()
                 .list(
                     q=f"'{folder_id}' in parents and trashed = false",
@@ -88,7 +94,7 @@ class GoogleDriveReader:
                     includeItemsFromAllDrives=True,
                 )
                 .execute()
-            )
+            ))
             items.extend(response.get("files", []))
             page_token = response.get("nextPageToken")
             if not page_token:
@@ -102,7 +108,7 @@ class GoogleDriveReader:
             downloader = self.media_downloader(handle, request)
             done = False
             while not done:
-                _, done = downloader.next_chunk()
+                _, done = perform(self.config, "download", downloader.next_chunk)
 
 
 def _requested_months(start: date, end: date) -> set[tuple[str, str]]:
@@ -160,10 +166,7 @@ def sync_fitness_drive(
     if not config.fitness_drive_folder_id or not config.fitness_drive_cache:
         return {"files": 0, "downloaded": 0, "skipped_not_configured": 1}
     if reader is None:
-        try:
-            reader = GoogleDriveReader(config)
-        except RuntimeError:
-            return {"files": 0, "downloaded": 0, "skipped_not_authorized": 1}
+        reader = GoogleDriveReader(config)
 
     requested = _requested_months(start, end)
     years = {

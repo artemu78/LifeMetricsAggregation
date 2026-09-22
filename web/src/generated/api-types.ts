@@ -38,6 +38,56 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/google-drive/connect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start user-initiated Google Drive authorization */
+        post: operations["connectGoogleDrive"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/google-drive/connection/{sessionId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getGoogleDriveConnection"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/google-drive/client": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Save a user-selected Desktop OAuth client locally */
+        post: operations["saveGoogleDriveClient"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -122,7 +172,26 @@ export interface components {
             generatedAt: string;
             days: components["schemas"]["DashboardDay"][];
         };
+        SourceIssue: {
+            code: string;
+            message: string;
+            /** @enum {string} */
+            action: "reconnect" | "configure" | "retry";
+            steps: string[];
+            diagnosticId?: string;
+        };
+        DriveConnectionState: {
+            /** @enum {string} */
+            status: "idle" | "pending" | "success" | "failed";
+            sessionId?: string;
+            authorizationUrl?: string;
+            issue?: components["schemas"]["SourceIssue"];
+        };
+        DriveClientUpload: {
+            content: string;
+        };
         SourceSyncSummary: {
+            issue?: components["schemas"]["SourceIssue"];
             source: components["schemas"]["SourceName"];
             status: components["schemas"]["SourceRunStatus"];
             records: number;
@@ -142,6 +211,7 @@ export interface components {
             };
         };
         SyncProgressEvent: {
+            issue?: components["schemas"]["SourceIssue"];
             /** @enum {string} */
             type: "progress";
             source: components["schemas"]["SourceName"];
@@ -257,6 +327,76 @@ export interface operations {
                 };
             };
             500: components["responses"]["InternalError"];
+        };
+    };
+    connectGoogleDrive: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Connection session */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DriveConnectionState"];
+                };
+            };
+            403: components["responses"]["BadRequest"];
+        };
+    };
+    getGoogleDriveConnection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sessionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Connection progress */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DriveConnectionState"];
+                };
+            };
+            403: components["responses"]["BadRequest"];
+        };
+    };
+    saveGoogleDriveClient: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DriveClientUpload"];
+            };
+        };
+        responses: {
+            /** @description Configuration saved or actionable failure */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DriveConnectionState"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            403: components["responses"]["BadRequest"];
         };
     };
 }

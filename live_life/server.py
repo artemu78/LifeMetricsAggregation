@@ -7,6 +7,9 @@ import fcntl
 import json
 import subprocess
 import sys
+import queue
+import threading
+import time
 
 import uvicorn
 import yaml
@@ -24,10 +27,60 @@ from .api_models import (
     SourceName,
 )
 from .config import load_config
+from .drive_connection import connection
+from .drive_recovery import report_failure
+from .api_models import DriveClientUpload, DriveConnectionState
 
 
 ROOT = Path(__file__).resolve().parent.parent
 app = FastAPI(title="Live Life Local Dashboard", docs_url="/docs")
+
+
+@app.middleware("http")
+async def protect_google_connection(request: Request, call_next):
+    if request.url.path.startswith("/api/google-drive/"):
+        origin = request.headers.get("origin")
+        own_origin = f"{request.url.scheme}://{request.url.netloc}"
+        if (
+            request.url.hostname not in {"127.0.0.1", "localhost", "::1", "testserver"}
+            or not request.client or request.client.host not in {"127.0.0.1", "::1", "testclient"}
+            or (origin is not None and origin != own_origin)
+            or request.headers.get("sec-fetch-site") == "cross-site"
+            or (request.method == "POST" and request.headers.get("x-live-life-action") != "1")
+        ):
+            return _error(403, "LOCAL_ACTION_REQUIRED", "Откройте Live Life на этом компьютере и повторите действие.")
+    response = await call_next(request)
+    if request.url.path.startswith("/api/google-drive/"):
+        response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@app.post("/api/google-drive/connect", response_model=DriveConnectionState, response_model_exclude_none=True)
+def connect_google_drive():
+    return connection.start(load_config(ROOT))
+
+
+@app.get("/api/google-drive/connection/{session_id}", response_model=DriveConnectionState, response_model_exclude_none=True)
+def google_drive_connection(session_id: str):
+    return connection.snapshot(session_id)
+
+
+@app.post("/api/google-drive/client", response_model=DriveConnectionState, response_model_exclude_none=True)
+async def save_google_drive_client(request: Request):
+    body = bytearray()
+    async for chunk in request.stream():
+        body.extend(chunk)
+        if len(body) > 65536:
+            return _error(400, "INVALID_CLIENT_FILE", "Выберите небольшой JSON-файл OAuth-клиента типа Desktop app.")
+    try:
+        upload = DriveClientUpload.model_validate_json(body)
+    except ValidationError:
+        return _error(400, "INVALID_CLIENT_FILE", "Не удалось прочитать JSON-файл OAuth-клиента.")
+    config = load_config(ROOT)
+    try:
+        return connection.save_client(config, upload.content)
+    except Exception as exc:
+        return {"status": "failed", "issue": report_failure(config, exc, "configuration")}
 
 
 class DashboardSyncWorkerResponse(DashboardSyncResponse):
@@ -119,8 +172,8 @@ def _stream_sync_error_event(code: str, message: str) -> str:
     return f"data: {err}\n\n"
 
 
-def _stream_sync_events(start: date, end: date, *, timeout: int):
-    proc = subprocess.Popen(
+def _start_sync_process(start: date, end: date):
+    return subprocess.Popen(
         [
             sys.executable,
             "-m",
@@ -133,34 +186,89 @@ def _stream_sync_events(start: date, end: date, *, timeout: int):
         ],
         cwd=ROOT,
         stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
         text=True,
         bufsize=1,
     )
+
+
+def _start_sync_reader(proc):
+    lines = queue.Queue()
+
+    def read_output():
+        try:
+            if proc.stdout is not None:
+                for line in iter(proc.stdout.readline, ""):
+                    lines.put(line)
+        finally:
+            lines.put(None)
+
+    threading.Thread(target=read_output, daemon=True).start()
+    return lines
+
+
+def _stream_sync_output(lines, proc, *, timeout: int):
+    deadline = time.monotonic() + timeout
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise subprocess.TimeoutExpired(proc.args, timeout)
+        try:
+            line = lines.get(timeout=min(remaining, 10))
+        except queue.Empty:
+            if time.monotonic() >= deadline:
+                raise subprocess.TimeoutExpired(proc.args, timeout)
+            yield ": keep-alive\n\n"
+            continue
+        if line is None:
+            return deadline
+        line = line.strip()
+        if line:
+            yield f"data: {line}\n\n"
+
+
+def _sync_exit_event(proc, deadline):
+    proc.wait(timeout=max(0.001, deadline - time.monotonic()))
+    if proc.returncode == 75:
+        return _stream_sync_error_event("SYNC_ALREADY_RUNNING", SYNC_ALREADY_RUNNING_MESSAGE)
+    if proc.returncode != 0:
+        return _stream_sync_error_event("SYNC_FAILED", "Данные не обновлены. Проверьте журнал data/logs/bracelet.jsonl.")
+    return None
+
+
+def _stop_sync_process(proc):
+    if proc.poll() is None:
+        proc.kill()
+    proc.wait(timeout=5)
+    if proc.stdout is not None:
+        proc.stdout.close()
+
+
+def _stream_sync_events(start: date, end: date, *, timeout: int):
+    proc = _start_sync_process(start, end)
+    lines = _start_sync_reader(proc)
     try:
-        if proc.stdout is not None:
-            for line in iter(proc.stdout.readline, ""):
-                line = line.strip()
-                if line:
-                    yield f"data: {line}\n\n"
-        proc.wait(timeout=timeout)
-        if proc.returncode == 75:
-            yield _stream_sync_error_event("SYNC_ALREADY_RUNNING", SYNC_ALREADY_RUNNING_MESSAGE)
-        elif proc.returncode != 0:
-            yield _stream_sync_error_event("SYNC_FAILED", "Данные не обновлены.")
+        stream = _stream_sync_output(lines, proc, timeout=timeout)
+        while True:
+            try:
+                yield next(stream)
+            except StopIteration as completed:
+                event = _sync_exit_event(proc, completed.value)
+                if event:
+                    yield event
+                break
     except subprocess.TimeoutExpired:
         proc.kill()
-        yield _stream_sync_error_event("SYNC_TIMEOUT", "Обновление данных заняло слишком много времени.")
-    except Exception as exc:
+        yield _stream_sync_error_event("SYNC_TIMEOUT", "Обновление данных заняло слишком много времени. Повторите обновление.")
+    except Exception:
         proc.kill()
-        yield _stream_sync_error_event("SYNC_FAILED", str(exc))
+        yield _stream_sync_error_event("SYNC_FAILED", "Не удалось завершить обновление данных.")
     finally:
-        if proc.poll() is None:
-            proc.kill()
+        _stop_sync_process(proc)
 
 
 def _stream_sync(start: date, end: date, *, timeout: int) -> StreamingResponse | JSONResponse:
-    if _is_sync_locked(ROOT / ".live_life.data_sync.lock"):
+    if _is_sync_locked(ROOT / "data/.fitness-sync.lock"):
         return _error(409, "SYNC_ALREADY_RUNNING", SYNC_ALREADY_RUNNING_MESSAGE)
 
     return StreamingResponse(
@@ -175,7 +283,7 @@ def _stream_sync(start: date, end: date, *, timeout: int) -> StreamingResponse |
 
 
 
-@app.post("/api/data-sync", response_model=DashboardSyncResponse)
+@app.post("/api/data-sync", response_model=DashboardSyncResponse, response_model_exclude_none=True)
 def data_sync(request: DateRange, req: Request):
     if request.to < request.from_:
         return _error(400, "INVALID_DATE_RANGE", "Дата «to» должна быть не раньше «from».")
