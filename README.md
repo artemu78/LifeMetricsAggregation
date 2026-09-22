@@ -257,3 +257,42 @@ Local health CSV and Health Connect ZIP inbox handling has been retired.
 Fitness reports use only Google Drive exports, without a local-health fallback.
 Historical local health files and database records are retained but not imported
 or included in new report summaries.
+
+### Recovering the Bracelet Google Drive connection
+
+Expired access tokens refresh automatically. Transient Google/network failures retry
+up to three application attempts with short backoff and bounded HTTP requests. A
+revoked/expired refresh token cannot be renewed silently: the update dialog now
+explains the failure and offers **Подключить Google Drive**. Press it, follow
+**Продолжить вход в Google**, grant read-only Drive access, return to the app and
+press **Повторить обновление**. Consent waits at most three minutes. Existing
+credentials are replaced atomically only after successful authorization with a
+refresh token; failed/cancelled consent keeps the previous file.
+
+If Google reports a deleted/invalid OAuth client or the project is gone, expand
+**Настроить Google Cloud или заменить удалённый проект** in the dialog. It links to
+project recovery/creation, Drive API activation, Audience and Desktop OAuth client
+creation. Download the new Desktop client JSON and upload it in the dialog, then
+connect again. The app cannot restore a Google project or grant consent on your
+behalf. Google Cloud actions and sign-in take place on Google's website.
+
+The dialog also explains the seven-day refresh-token lifetime for external apps
+in Testing. Production may require Google's verification; changing that setting
+is not a guarantee that authorization will never be revoked. See Google's
+[OAuth token expiration documentation](https://developers.google.com/identity/protocols/oauth2#expiration)
+and [Desktop app guide](https://developers.google.com/identity/protocols/oauth2/native-app).
+
+Existing `GOOGLE_DRIVE_CLIENT_SECRET_FILE` and `GOOGLE_DRIVE_TOKEN_FILE` settings
+are honored. Without them, the app uses `private/google-drive-client.json` and
+`private/google-drive-token.json`. Uploaded client JSON and tokens are local,
+owner-readable/writable files. The configured `GOOGLE_DRIVE_FOLDER_ID` still needs
+to identify the Reva Health Exporter folder available to the chosen Google account.
+
+Safe import diagnostics append to `data/logs/bracelet.jsonl`. They include time,
+stage (`refresh`, `list`, `download`, `sync` or `authorization`), retries, normalized
+Google reason/status and a diagnostic ID shown in the dialog and `source_runs`.
+No tokens, authorization codes, raw Google responses, account identities, file IDs
+or health payloads are logged. An unrecognized Google response is reported as
+unknown rather than copying its potentially sensitive text. Logs are local and
+append across runs. Dashboard worker streams now enforce the five-minute deadline
+while waiting for output and release the process/lock after a timeout.

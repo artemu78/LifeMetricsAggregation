@@ -15,6 +15,7 @@ from pydantic import (
     RootModel,
     confloat,
     conint,
+    constr,
 )
 
 
@@ -152,10 +153,52 @@ class DashboardResponse(BaseModel):
     days: list[DashboardDay]
 
 
+class Action(StrEnum):
+    reconnect = 'reconnect'
+    configure = 'configure'
+    retry = 'retry'
+
+
+class SourceIssue(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    code: str
+    message: str
+    action: Action
+    steps: list[str]
+    diagnosticId: str | None = None
+
+
+class Status(StrEnum):
+    idle = 'idle'
+    pending = 'pending'
+    success = 'success'
+    failed = 'failed'
+
+
+class DriveConnectionState(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    status: Status
+    sessionId: str | None = None
+    authorizationUrl: str | None = None
+    issue: SourceIssue | None = None
+
+
+class DriveClientUpload(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    content: constr(max_length=16384)
+
+
 class SourceSyncSummary(BaseModel):
     model_config = ConfigDict(
         extra='forbid',
     )
+    issue: SourceIssue | None = None
     source: SourceName
     status: SourceRunStatus
     records: conint(ge=0)
@@ -187,6 +230,7 @@ class SyncProgressEvent(BaseModel):
     model_config = ConfigDict(
         extra='forbid',
     )
+    issue: SourceIssue | None = None
     type: Type
     source: SourceName
     status: SourceRunStatus

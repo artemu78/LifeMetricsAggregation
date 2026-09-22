@@ -7,6 +7,7 @@ import sys
 from .config import load_config
 from .db import connect, record_source_run
 from .fitness_drive import sync_fitness_drive
+from .drive_recovery import report_failure
 from .importers import import_fitness_drive
 from .sync_worker import InvalidDateRange, sync_worker
 
@@ -67,7 +68,7 @@ def main(argv: list[str] | None = None) -> int:
                     },
                 )
             except Exception as exc:
-                _record(config, start, end, "failed", started_at, {"errorType": type(exc).__name__})
+                _record(config, start, end, "failed", started_at, {"errorType": type(exc).__name__, "issue": report_failure(config, exc)})
                 print(f"{type(exc).__name__}: fitness synchronization failed", file=sys.stderr)
                 return 1
     except InvalidDateRange:

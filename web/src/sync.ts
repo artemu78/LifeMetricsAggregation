@@ -53,8 +53,9 @@ export async function syncDashboardDataStream(
         source: item.source,
         status: item.status,
         records: item.records,
+        issue: item.issue,
         latest: null,
-        display: item.status === 'success' ? 'обновлено' : item.status,
+        display: { success: 'обновлено', failed: 'ошибка', not_run: 'недоступен', partial: 'обновлено частично' }[item.status],
       })
     }
     return data

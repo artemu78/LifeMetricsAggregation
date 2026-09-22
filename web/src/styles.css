@@ -756,6 +756,7 @@ h1 {
 
 /* Sync Modal */
 .modal.sync-modal {
+  position: relative;
   width: min(500px, 92vw);
   height: auto;
   max-height: 85vh;
@@ -919,3 +920,22 @@ h1 {
     grid-template-columns: 1fr;
   }
 }
+
+.drive-recovery { margin-top: 1.25rem; padding: 1rem; border: 1px solid #c9d5cd; border-radius: 12px; background: #f6f8f5; overflow-wrap: anywhere; }
+.drive-recovery h3 { margin: 0 0 .6rem; }
+.drive-recovery p, .drive-recovery li { font-size: .9rem; line-height: 1.5; }
+.drive-recovery ol { padding-left: 1.3rem; }
+.drive-recovery li + li { margin-top: .6rem; }
+.drive-recovery a { color: #285c50; }
+.drive-recovery a.primary { color: white; }
+.drive-recovery-actions { display: flex; flex-wrap: wrap; gap: .65rem; margin: .8rem 0; }
+.drive-recovery summary { cursor: pointer; font-weight: 600; }
+.drive-recovery-note, .drive-recovery small { color: #59675f; }
+.drive-client-upload { display: grid; gap: .5rem; font-size: .9rem; }
+.drive-client-upload input { max-width: 100%; }
+
+.drive-recovery details + details { margin-top: .8rem; }
+.drive-recovery .button { display: inline-flex; align-items: center; justify-content: center; min-height: 40px; padding: 9px 14px; border: 1px solid #b8ccc1; border-radius: 10px; background: #e6f0e9; color: #244b3c; font: inherit; font-size: .88rem; font-weight: 600; text-decoration: none; cursor: pointer; }
+.drive-recovery .button:hover:not(:disabled) { background: #d6e8dc; }
+.drive-recovery .button:disabled { opacity: .55; cursor: wait; }
+.drive-recovery .button.primary { background: #285c50; color: #fff; }

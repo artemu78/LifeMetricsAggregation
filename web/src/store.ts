@@ -11,6 +11,7 @@ export type SourceSyncProgress = {
   status: 'pending' | 'success' | 'partial' | 'failed' | 'not_run'
   latest: string | null
   display: string | null
+  issue?: components['schemas']['SourceIssue'] | null
   records?: number
 }
 
@@ -71,6 +72,7 @@ export class DashboardStore {
   }
 
   async syncAll(fetchRequest = fetch) {
+    if (this.syncing) return
     this.syncing = true
     this.syncModalOpen = true
     this.error = null
@@ -90,10 +92,11 @@ export class DashboardStore {
           runInAction(() => {
             this.syncProgress[event.source] = {
               source: event.source,
-              status: event.status as any,
+              status: event.status,
               latest: event.latest ?? null,
               display: event.display ?? null,
               records: event.records,
+              issue: event.issue,
             }
           })
         },
@@ -105,6 +108,15 @@ export class DashboardStore {
         rescuetime: 'RescueTime',
         todoist: 'Todoist',
       }
+      runInAction(() => {
+        for (const item of result.sources) {
+          this.syncProgress[item.source] = {
+            ...this.syncProgress[item.source], ...item,
+            latest: this.syncProgress[item.source]?.latest ?? null,
+            display: this.syncProgress[item.source]?.display ?? null,
+          }
+        }
+      })
       await this.load()
       runInAction(() => {
         this.syncMessage = result.sources
@@ -119,6 +131,12 @@ export class DashboardStore {
     } catch (error) {
       runInAction(() => {
         this.error = error instanceof Error ? error.message : 'Обновление данных не выполнено'
+        for (const progress of Object.values(this.syncProgress)) {
+          if (progress.status === 'pending') {
+            progress.status = 'not_run'
+            progress.display = 'обновление прервано'
+          }
+        }
       })
     } finally {
       runInAction(() => {

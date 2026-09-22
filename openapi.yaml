@@ -54,6 +54,58 @@ paths:
                 $ref: '#/components/schemas/ApiError'
         '500':
           $ref: '#/components/responses/InternalError'
+  /api/google-drive/connect:
+    post:
+      operationId: connectGoogleDrive
+      summary: Start user-initiated Google Drive authorization
+      responses:
+        '200':
+          description: Connection session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DriveConnectionState'
+        '403':
+          $ref: '#/components/responses/BadRequest'
+  /api/google-drive/connection/{sessionId}:
+    get:
+      operationId: getGoogleDriveConnection
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Connection progress
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DriveConnectionState'
+        '403':
+          $ref: '#/components/responses/BadRequest'
+  /api/google-drive/client:
+    post:
+      operationId: saveGoogleDriveClient
+      summary: Save a user-selected Desktop OAuth client locally
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DriveClientUpload'
+      responses:
+        '200':
+          description: Configuration saved or actionable failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DriveConnectionState'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/BadRequest'
 components:
   parameters:
     FromDate:
@@ -271,11 +323,53 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/DashboardDay'
+    SourceIssue:
+      type: object
+      additionalProperties: false
+      required: [code, message, action, steps]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        action:
+          type: string
+          enum: [reconnect, configure, retry]
+        steps:
+          type: array
+          items:
+            type: string
+        diagnosticId:
+          type: string
+    DriveConnectionState:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [idle, pending, success, failed]
+        sessionId:
+          type: string
+        authorizationUrl:
+          type: string
+        issue:
+          $ref: '#/components/schemas/SourceIssue'
+    DriveClientUpload:
+      type: object
+      additionalProperties: false
+      required: [content]
+      properties:
+        content:
+          type: string
+          maxLength: 16384
     SourceSyncSummary:
       type: object
       additionalProperties: false
       required: [source, status, records]
       properties:
+        issue:
+          $ref: '#/components/schemas/SourceIssue'
         source:
           $ref: '#/components/schemas/SourceName'
         status:
@@ -317,6 +411,8 @@ components:
       additionalProperties: false
       required: [type, source, status, records]
       properties:
+        issue:
+          $ref: '#/components/schemas/SourceIssue'
         type:
           type: string
           enum: [progress]

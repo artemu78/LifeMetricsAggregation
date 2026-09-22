@@ -290,3 +290,17 @@ test('DashboardStore syncAll streams progress with latest and display values and
 
 
 
+
+test('an interrupted stream stops pending indicators and retains finished source results', async () => {
+  const store = new DashboardStore()
+  const fetcher = async () => sseStreamResponse([
+    'data: {"type":"progress","source":"bracelet","status":"success","records":1}\n\n',
+    'data: {"type":"error","code":"SYNC_TIMEOUT","message":"Повторите обновление"}\n\n',
+  ])
+  await store.syncAll(fetcher)
+  assert.equal(store.syncing, false)
+  assert.equal(store.syncProgress.bracelet.status, 'success')
+  assert.equal(store.syncProgress.todoist.status, 'not_run')
+  assert.equal(store.syncProgress.todoist.display, 'обновление прервано')
+  assert.equal(store.error, 'Повторите обновление')
+})

@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { DriveRecovery } from "./DriveRecovery";
 import { observer } from "mobx-react-lite";
 import {
   ChartNoAxesCombined,
@@ -803,6 +804,8 @@ export const SyncModal = observer(function SyncModal() {
         <span>Обновляем источники…</span>
       </div>
     );
+  } else if (Object.values(store.syncProgress).some(item => item.status === "failed" || item.status === "not_run" || item.status === "partial")) {
+    statusBanner = <div className="sync-status-banner error" role="status">Обновление завершено не для всех источников</div>;
   } else {
     statusBanner = (
       <div className="sync-status-banner success">
@@ -864,6 +867,9 @@ export const SyncModal = observer(function SyncModal() {
               );
             })}
           </ul>
+          {(store.syncProgress.bracelet?.status === "failed" || store.syncProgress.bracelet?.status === "not_run") && (
+            <DriveRecovery issue={store.syncProgress.bracelet.issue} syncing={store.syncing} retry={() => void store.syncAll()} />
+          )}
         </div>
 
         <footer className="sync-modal-footer">

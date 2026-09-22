@@ -211,7 +211,7 @@ test('syncDashboardDataStream falls back to json response when not SSE', async (
   assert.deepEqual(result, jsonBody)
   assert.equal(events.length, 2)
   assert.equal(events[0].display, 'обновлено')
-  assert.equal(events[1].display, 'not_run')
+  assert.equal(events[1].display, 'недоступен')
 })
 
 test('syncDashboardDataStream falls back when response body getReader is missing', async () => {
@@ -234,7 +234,7 @@ test('syncDashboardDataStream falls back when response body getReader is missing
     fetchMock,
   )
   assert.deepEqual(result, jsonBody)
-  assert.equal(events[0].display, 'failed')
+  assert.equal(events[0].display, 'ошибка')
 })
 
 test('syncDashboardDataStream handles error event with default message', async () => {
