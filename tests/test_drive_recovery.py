@@ -326,9 +326,10 @@ class DriveConnectionTest(TestCase):
         with TemporaryDirectory() as directory:
             config = configuration(Path(directory))
             connection = DriveConnection()
+            client_json = json.dumps(CLIENT)
             with connection_lock(config):
                 with self.assertRaises(DriveFailure) as failure:
-                    connection.save_client(config, json.dumps(CLIENT))
+                    connection.save_client(config, client_json)
             self.assertEqual(failure.exception.issue["code"], "GOOGLE_CONNECTION_BUSY")
             self.assertFalse(config.fitness_drive_client_secret.exists())
 
