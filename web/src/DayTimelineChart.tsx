@@ -22,6 +22,14 @@ type TodoistCluster = {
   events: RecordItem[];
   color: string;
 };
+type Metric = Day["detail"]["braceletMetrics"][number];
+type RescueItem = Day["detail"]["rescueTime"][number];
+
+function sortCopy<T>(items: T[], compare: (a: T, b: T) => number): T[] {
+  const sorted = [...items];
+  sorted.sort(compare);
+  return sorted;
+}
 
 const WIDTH = 1240;
 const HEIGHT = 760;
@@ -66,6 +74,249 @@ const EVENT_COLORS: Record<string, string> = {
   "ema-expired": "#87948e",
 };
 
+function buildHeartSeries(metrics: Metric[]) {
+  const heart = metrics
+    .filter(
+      (point) =>
+        point.metric === "fitness_drive.heart_rate" && point.value != null,
+    )
+    .map((point) => ({
+      time: Date.parse(point.timestamp),
+      value: point.value as number,
+    }));
+  return sortCopy(heart, (a, b) => a.time - b.time);
+}
+
+function buildStepSeries(metrics: Metric[]) {
+  const buckets = new Map<number, number>();
+  for (const point of metrics) {
+    if (
+      point.metric !== "fitness_drive.steps" ||
+      point.value == null ||
+      point.value <= 0
+    ) continue;
+    const time = Date.parse(point.timestamp);
+    const bucket = Math.floor(time / (15 * 60_000)) * 15 * 60_000;
+    buckets.set(bucket, (buckets.get(bucket) ?? 0) + point.value);
+  }
+  const steps = [...buckets]
+    .map(([time, value]) => ({ time, value }));
+  return sortCopy(steps, (a, b) => a.time - b.time);
+}
+
+function buildSleepBoundaries(
+  metrics: Metric[],
+  nextDayMetrics: Metric[],
+  start: number,
+  end: number,
+): { bedtime: number | null; wake: number | null; events: RecordItem[] } {
+  const sleepEntries = (points: Metric[]) =>
+    points.filter((point) => point.metric.startsWith("fitness_drive.sleep."));
+  const wakePoints = sleepEntries(metrics);
+  const bedtimePoints = sleepEntries(nextDayMetrics);
+  const bedtime = bedtimePoints.length
+    ? Math.min(...bedtimePoints.map((point) => Date.parse(point.timestamp)))
+    : null;
+  const wake = wakePoints.length
+    ? Math.max(
+        ...wakePoints.map(
+          (point) => Date.parse(point.timestamp) + (point.value ?? 0) * 1000,
+        ),
+      )
+    : null;
+  const events: RecordItem[] = [];
+  if (bedtime !== null && bedtime >= start && bedtime < end)
+    events.push({
+      start: bedtime,
+      end: 0,
+      label: "Сон",
+      detail: "Начало основной сессии сна",
+      color: EVENT_COLORS.sleep,
+      kind: "sleep",
+    });
+  if (wake !== null && wake >= start && wake < end)
+    events.push({
+      start: wake,
+      end: 0,
+      label: "Подъём",
+      detail: "Окончание основной сессии сна",
+      color: EVENT_COLORS.sleep,
+      kind: "sleep",
+    });
+  return { bedtime, wake, events };
+}
+
+function buildActivitySegments(items: RescueItem[]): RecordItem[] {
+  const buckets = new Map<number, RescueItem[]>();
+  for (const item of items.filter((entry) => entry.perspective === "activity")) {
+    const time = Date.parse(item.timestamp);
+    const bucket = buckets.get(time) ?? [];
+    bucket.push(item);
+    buckets.set(time, bucket);
+  }
+  const segments: RecordItem[] = [];
+  for (const [time, bucket] of buckets) {
+    let offset = 0;
+    for (const item of bucket) {
+      const from = time + offset * 1000;
+      const to = from + item.seconds * 1000;
+      segments.push({
+        start: from,
+        end: to,
+        label: item.label,
+        detail: `Активность · ${item.label}`,
+        color: activityColor(item.label),
+        kind: "activity",
+      });
+      offset += item.seconds;
+    }
+  }
+  return segments;
+}
+
+function buildProductivitySegments(items: RescueItem[]): RecordItem[] {
+  return items
+    .filter((item) => item.perspective === "productivity")
+    .map((item) => ({
+      start: Date.parse(item.timestamp),
+      end: Date.parse(item.timestamp) + item.seconds * 1000,
+      label: item.label,
+      detail: `Продуктивность · ${PRODUCTIVITY_NAMES[item.label] ?? item.label}`,
+      color: PRODUCTIVITY_COLORS[item.label] ?? "#789087",
+      kind: "productivity",
+    }));
+}
+
+function buildWelltoryMeasurements(
+  metrics: Day["detail"]["welltoryMetrics"],
+  start: number,
+  end: number,
+) {
+  const byTime = new Map<
+    string,
+    { timestamp: number; energy?: number; stress?: number; details: string[] }
+  >();
+  for (const point of metrics) {
+    const timestamp = Date.parse(point.timestamp);
+    const measurement = byTime.get(point.timestamp) ?? { timestamp, details: [] };
+    const normalizedMetric = point.metric.toLowerCase();
+    if (normalizedMetric.endsWith(".energy(hrv)") && point.value != null) {
+      measurement.energy = point.value;
+    } else if (normalizedMetric.endsWith(".stress(hrv)") && point.value != null) {
+      measurement.stress = point.value;
+    }
+    measurement.details.push(metricText(point));
+    byTime.set(point.timestamp, measurement);
+  }
+  const measurements = [...byTime.values()]
+    .filter(
+      (measurement) =>
+        measurement.timestamp >= start &&
+        measurement.timestamp <= end &&
+        (measurement.energy != null || measurement.stress != null),
+    )
+  return sortCopy(measurements, (a, b) => a.timestamp - b.timestamp);
+}
+
+function buildTodoistRecords(day: Day): RecordItem[] {
+  const records: RecordItem[] = [];
+  const sources = [
+    { tasks: day.detail.createdTasks, kind: "todo-created", action: "создана" },
+    { tasks: day.detail.completedTasks, kind: "todo-completed", action: "закрыта" },
+    { tasks: day.detail.deletedTasks, kind: "todo-deleted", action: "удалена" },
+  ] as const;
+  for (const source of sources) {
+    for (const task of source.tasks) {
+      records.push({
+        start: Date.parse(task.timestamp),
+        end: 0,
+        label: task.content,
+        detail: `Задача ${source.action} · ${task.content}`,
+        color: EVENT_COLORS[source.kind],
+        kind: source.kind,
+      });
+    }
+  }
+  return records;
+}
+
+function buildEmaRecords(day: Day): RecordItem[] {
+  const statuses: Record<string, string> = {
+    pending: "ожидание ответа",
+    answered: "ответ отправлен",
+    dismissed: "отклонено",
+    expired: "время ответа истекло",
+  };
+  return day.detail.emaEvents.map((event) => ({
+    start: Date.parse(event.timestamp),
+    end: 0,
+    label: event.status,
+    detail: `EMA · ${statuses[event.status] ?? event.status}`,
+    color: EVENT_COLORS[`ema-${event.status}`],
+    kind: `ema-${event.status}`,
+  }));
+}
+
+function buildMetricEvents(metrics: Metric[]): RecordItem[] {
+  return metrics
+    .filter(
+      (point) =>
+        point.metric !== "fitness_drive.heart_rate" &&
+        point.metric !== "fitness_drive.steps" &&
+        point.metric !== "fitness_drive.exercise" &&
+        !point.metric.startsWith("fitness_drive.sleep."),
+    )
+    .map((point) => ({
+      start: Date.parse(point.timestamp),
+      end: 0,
+      label: point.metric,
+      detail: metricText(point),
+      color: EVENT_COLORS.metric,
+      kind: "metric",
+    }));
+}
+
+function buildTodoistClusters(records: RecordItem[], start: number, end: number) {
+  const visible = records
+    .filter((item) => item.start >= start && item.start <= end)
+  const ordered = sortCopy(visible, (a, b) => a.start - b.start);
+  const clusters: TodoistCluster[] = [];
+  for (const event of ordered) {
+    const current = clusters.at(-1);
+    if (!current || event.start - current.events[0].start > 10 * 60_000) {
+      clusters.push({ timestamp: event.start, events: [event], color: event.color });
+      continue;
+    }
+    current.events.push(event);
+    current.timestamp = (current.events[0].start + event.start) / 2;
+    if (current.events.some((item) => item.color !== current.color))
+      current.color = "#536b60";
+  }
+  return clusters;
+}
+
+function positionTodoistClusters(
+  clusters: TodoistCluster[],
+  x: (timestamp: number) => number,
+) {
+  const positions = clusters.map((cluster) => x(cluster.timestamp));
+  const gap = Math.min(
+    40,
+    (WIDTH - RIGHT - LEFT - 38) / Math.max(1, positions.length - 1),
+  );
+  for (let index = 0; index < positions.length; index += 1) {
+    positions[index] = Math.max(LEFT + 19, positions[index]);
+    if (index > 0)
+      positions[index] = Math.max(positions[index], positions[index - 1] + gap);
+  }
+  const overflow = Math.max(0, (positions.at(-1) ?? 0) - (WIDTH - RIGHT - 19));
+  if (overflow) {
+    for (let index = 0; index < positions.length; index += 1)
+      positions[index] -= overflow;
+  }
+  return positions;
+}
+
 function zonedTimestamp(date: string, hour: number, timezone: string): number {
   const [year, month, day] = date.split("-").map(Number);
   const target = Date.UTC(year, month - 1, day, hour);
@@ -109,8 +360,8 @@ function localLabel(timestamp: number, timezone: string): string {
 
 function activityColor(label: string): string {
   let hash = 0;
-  for (let index = 0; index < label.length; index += 1)
-    hash = (hash * 31 + label.charCodeAt(index)) | 0;
+  for (const character of label)
+    hash = Math.trunc(hash * 31 + character.codePointAt(0)!);
   const colors = [
     "#407f70",
     "#5e87b8",
@@ -126,8 +377,18 @@ function activityColor(label: string): string {
 function metricText(point: Day["detail"]["welltoryMetrics"][number]): string {
   const value =
     point.value == null ? (point.valueText ?? "") : String(point.value);
-  return `${point.metric.replace(/^(welltory|fitness_drive)\./, "").replaceAll("_", " ")}${value ? ` · ${value} ${point.unit ?? ""}` : ""}`.trim();
+  const metric = point.metric
+    .replace(/^(welltory|fitness_drive)\./, "")
+    .replaceAll("_", " ");
+  const valueLabel = value ? ` · ${value} ${point.unit ?? ""}` : "";
+  return `${metric}${valueLabel}`.trim();
 }
+
+type DayTimelineChartProps = Readonly<{
+  day: Day;
+  timezone: string;
+  nextDaySleepMetrics?: Day["detail"]["braceletMetrics"];
+}>;
 
 function positionSelection(
   element: HTMLDivElement | null,
@@ -161,11 +422,7 @@ export function DayTimelineChart({
   day,
   timezone,
   nextDaySleepMetrics = [],
-}: {
-  day: Day;
-  timezone: string;
-  nextDaySleepMetrics?: Day["detail"]["braceletMetrics"];
-}) {
+}: DayTimelineChartProps) {
   const [selected, setSelected] = useState<RecordItem | null>(null);
   const [hoveredHeart, setHoveredHeart] = useState<{
     time: number;
@@ -210,60 +467,23 @@ export function DayTimelineChart({
     selectionPointerRef.current = null;
     setSelected(null);
   };
-  const heart = day.detail.braceletMetrics
-    .filter(
-      (point) =>
-        point.metric === "fitness_drive.heart_rate" && point.value != null,
-    )
-    .map((point) => ({
-      time: Date.parse(point.timestamp),
-      value: point.value as number,
-    }))
-    .sort((a, b) => a.time - b.time);
-  const stepBuckets = new Map<number, number>();
-  for (const point of day.detail.braceletMetrics) {
-    if (
-      point.metric !== "fitness_drive.steps" ||
-      point.value == null ||
-      point.value <= 0
-    )
-      continue;
-    const time = Date.parse(point.timestamp);
-    const bucket = Math.floor(time / (15 * 60_000)) * 15 * 60_000;
-    stepBuckets.set(bucket, (stepBuckets.get(bucket) ?? 0) + point.value);
-  }
-  const stepSeries = [...stepBuckets]
-    .map(([time, value]) => ({ time, value }))
-    .sort((a, b) => a.time - b.time);
+  const metrics = day.detail.braceletMetrics;
+  const heart = buildHeartSeries(metrics);
+  const stepSeries = buildStepSeries(metrics);
+  const activity = day.detail.rescueTime.filter(
+    (item) => item.perspective === "activity",
+  );
+  const productivity = day.detail.rescueTime.filter(
+    (item) => item.perspective === "productivity",
+  );
   const maxStepCount = Math.max(1, ...stepSeries.map((item) => item.value));
-  const logicalStart = zonedTimestamp(day.date, 5, timezone);
-  const logicalEnd = zonedTimestamp(day.date, 29, timezone);
-  const wakeSleep = day.detail.braceletMetrics.filter((point) =>
-    point.metric.startsWith("fitness_drive.sleep."),
-  );
-  const bedtimeSleep = nextDaySleepMetrics.filter((point) =>
-    point.metric.startsWith("fitness_drive.sleep."),
-  );
-  const bedtime = bedtimeSleep.length
-    ? Math.min(...bedtimeSleep.map((point) => Date.parse(point.timestamp)))
-    : null;
-  const wake = wakeSleep.length
-    ? Math.max(
-        ...wakeSleep.map(
-          (point) => Date.parse(point.timestamp) + (point.value ?? 0) * 1000,
-        ),
-      )
-    : null;
-  const hasBedtimeInLogicalDay =
-    bedtime !== null && bedtime >= logicalStart && bedtime < logicalEnd;
-  const hasWakeInLogicalDay =
-    wake !== null && wake >= logicalStart && wake < logicalEnd;
-  const start = logicalStart;
-  const end = logicalEnd;
+  const start = zonedTimestamp(day.date, 5, timezone);
+  const end = zonedTimestamp(day.date, 29, timezone);
   const plotWidth = WIDTH - LEFT - RIGHT;
   const x = (time: number) =>
     LEFT + ((time - start) / (end - start)) * plotWidth;
-  const heartValues = heart.map((item) => item.value).sort((a, b) => a - b);
+  const heartValueList = heart.map((item) => item.value);
+  const heartValues = sortCopy(heartValueList, (a, b) => a - b);
   const low = heartValues.length
     ? heartValues[Math.floor((heartValues.length - 1) * 0.03)]
     : 40;
@@ -275,26 +495,22 @@ export function DayTimelineChart({
     HEART_BOTTOM -
     ((value - (low - heartRange * 0.08)) / (heartRange * 1.16)) *
       (HEART_BOTTOM - HEART_TOP);
-  let heartPath = "";
-  let previous = 0;
-  for (const point of heart) {
-    const next = `${previous && point.time - previous <= 20 * 60_000 ? "L" : "M"}${x(point.time).toFixed(1)},${heartY(point.value).toFixed(1)}`;
-    heartPath += `${next} `;
-    previous = point.time;
-  }
+  const heartPathPoints = heart
+    .map((point, index) => {
+      const previous = heart[index - 1];
+      const command = previous && point.time - previous.time <= 20 * 60_000 ? "L" : "M";
+      return `${command}${x(point.time).toFixed(1)},${heartY(point.value).toFixed(1)}`;
+    });
+  const heartPath = heartPathPoints.join(" ");
   const hoverHeartAt = (event: MouseEvent<SVGRectElement>) => {
     const bounds = event.currentTarget.ownerSVGElement?.getBoundingClientRect();
     if (!bounds || !heart.length) return;
     const pointerX = ((event.clientX - bounds.left) / bounds.width) * WIDTH;
-    let nearest = heart[0];
-    let nearestDistance = Math.abs(x(nearest.time) - pointerX);
-    for (let index = 1; index < heart.length; index += 1) {
-      const distance = Math.abs(x(heart[index].time) - pointerX);
-      if (distance < nearestDistance) {
-        nearest = heart[index];
-        nearestDistance = distance;
-      }
-    }
+    const nearest = heart.reduce((best, candidate) =>
+      Math.abs(x(candidate.time) - pointerX) < Math.abs(x(best.time) - pointerX)
+        ? candidate
+        : best,
+    );
     setHoveredHeart(nearest);
   };
   const hoverX = hoveredHeart ? x(hoveredHeart.time) : 0;
@@ -302,144 +518,25 @@ export function DayTimelineChart({
   const hoverBoxX = Math.max(LEFT, Math.min(WIDTH - RIGHT - 112, hoverX - 56));
   const hoverBoxY = Math.max(HEART_TOP + 3, hoverY - 44);
 
-  const activity = day.detail.rescueTime.filter(
-    (item) => item.perspective === "activity",
+  const activitySegments = buildActivitySegments(day.detail.rescueTime);
+  const productivitySegments = buildProductivitySegments(day.detail.rescueTime);
+  const welltoryMeasurements = buildWelltoryMeasurements(
+    day.detail.welltoryMetrics,
+    start,
+    end,
   );
-  const productivity = day.detail.rescueTime.filter(
-    (item) => item.perspective === "productivity",
+  const todoistRecords = buildTodoistRecords(day);
+  const emaRecords = buildEmaRecords(day);
+  const sleepBoundaries = buildSleepBoundaries(
+    metrics,
+    nextDaySleepMetrics,
+    start,
+    end,
   );
-  const activitySegments: RecordItem[] = [];
-  const activityBuckets = new Map<number, typeof activity>();
-  for (const item of activity) {
-    const time = Date.parse(item.timestamp);
-    const bucket = activityBuckets.get(time) ?? [];
-    bucket.push(item);
-    activityBuckets.set(time, bucket);
-  }
-  for (const [time, bucket] of activityBuckets) {
-    let offset = 0;
-    for (const item of bucket) {
-      const from = time + offset * 1000;
-      const to = from + item.seconds * 1000;
-      activitySegments.push({
-        start: from,
-        end: to,
-        label: item.label,
-        detail: `Активность · ${item.label}`,
-        color: activityColor(item.label),
-        kind: "activity",
-      });
-      offset += item.seconds;
-    }
-  }
-  const productivitySegments: RecordItem[] = productivity.map((item) => ({
-    start: Date.parse(item.timestamp),
-    end: Date.parse(item.timestamp) + item.seconds * 1000,
-    label: item.label,
-    detail: `Продуктивность · ${PRODUCTIVITY_NAMES[item.label] ?? item.label}`,
-    color: PRODUCTIVITY_COLORS[item.label] ?? "#789087",
-    kind: "productivity",
-  }));
-
-  const welltoryByTime = new Map<
-    string,
-    { timestamp: number; energy?: number; stress?: number; details: string[] }
-  >();
-  for (const point of day.detail.welltoryMetrics) {
-    const timestamp = Date.parse(point.timestamp);
-    const measurement = welltoryByTime.get(point.timestamp) ?? {
-      timestamp,
-      details: [],
-    };
-    const normalizedMetric = point.metric.toLowerCase();
-    if (normalizedMetric.endsWith(".energy(hrv)") && point.value != null)
-      measurement.energy = point.value;
-    else if (normalizedMetric.endsWith(".stress(hrv)") && point.value != null)
-      measurement.stress = point.value;
-    measurement.details.push(metricText(point));
-    welltoryByTime.set(point.timestamp, measurement);
-  }
-  const welltoryMeasurements = [...welltoryByTime.values()]
-    .filter(
-      (measurement) =>
-        measurement.timestamp >= start &&
-        measurement.timestamp <= end &&
-        (measurement.energy != null || measurement.stress != null),
-    )
-    .sort((a, b) => a.timestamp - b.timestamp);
-
-  const todoistRecords: RecordItem[] = [];
-  for (const task of day.detail.createdTasks)
-    todoistRecords.push({
-      start: Date.parse(task.timestamp),
-      end: 0,
-      label: task.content,
-      detail: `Задача создана · ${task.content}`,
-      color: EVENT_COLORS["todo-created"],
-      kind: "todo-created",
-    });
-  for (const task of day.detail.completedTasks)
-    todoistRecords.push({
-      start: Date.parse(task.timestamp),
-      end: 0,
-      label: task.content,
-      detail: `Задача закрыта · ${task.content}`,
-      color: EVENT_COLORS["todo-completed"],
-      kind: "todo-completed",
-    });
-  for (const task of day.detail.deletedTasks)
-    todoistRecords.push({
-      start: Date.parse(task.timestamp),
-      end: 0,
-      label: task.content,
-      detail: `Задача удалена · ${task.content}`,
-      color: EVENT_COLORS["todo-deleted"],
-      kind: "todo-deleted",
-    });
-  const emaRecords: RecordItem[] = day.detail.emaEvents.map((event) => ({
-    start: Date.parse(event.timestamp),
-    end: 0,
-    label: event.status,
-    detail: `EMA · ${{ pending: "ожидание ответа", answered: "ответ отправлен", dismissed: "отклонено", expired: "время ответа истекло" }[event.status]}`,
-    color: EVENT_COLORS[`ema-${event.status}`],
-    kind: `ema-${event.status}`,
-  }));
-  const eventRecords: RecordItem[] = [];
-  for (const point of day.detail.braceletMetrics) {
-    if (
-      point.metric === "fitness_drive.heart_rate" ||
-      point.metric === "fitness_drive.steps" ||
-      point.metric === "fitness_drive.exercise" ||
-      point.metric.startsWith("fitness_drive.sleep.")
-    )
-      continue;
-    eventRecords.push({
-      start: Date.parse(point.timestamp),
-      end: 0,
-      label: point.metric,
-      detail: metricText(point),
-      color: EVENT_COLORS.metric,
-      kind: "metric",
-    });
-  }
-  if (hasBedtimeInLogicalDay && bedtime !== null)
-    eventRecords.push({
-      start: bedtime,
-      end: 0,
-      label: "Сон",
-      detail: "Начало основной сессии сна",
-      color: EVENT_COLORS.sleep,
-      kind: "sleep",
-    });
-  if (hasWakeInLogicalDay && wake !== null)
-    eventRecords.push({
-      start: wake,
-      end: 0,
-      label: "Подъём",
-      detail: "Окончание основной сессии сна",
-      color: EVENT_COLORS.sleep,
-      kind: "sleep",
-    });
+  const { bedtime, wake } = sleepBoundaries;
+  const hasBedtimeInLogicalDay = bedtime !== null;
+  const hasWakeInLogicalDay = wake !== null;
+  const eventRecords = [...buildMetricEvents(metrics), ...sleepBoundaries.events];
   const visibleEvents = eventRecords.filter(
     (item) => item.start >= start && item.start <= end,
   );
@@ -449,58 +546,11 @@ export function DayTimelineChart({
   const visibleEmaEvents = emaRecords.filter(
     (item) => item.start >= start && item.start <= end,
   );
-  const todoistClusters: TodoistCluster[] = [];
-  for (const event of visibleTodoistEvents.sort((a, b) => a.start - b.start)) {
-    const currentCluster = todoistClusters.at(-1);
-    if (
-      !currentCluster ||
-      event.start - currentCluster.events[0].start > 10 * 60_000
-    ) {
-      todoistClusters.push({
-        timestamp: event.start,
-        events: [event],
-        color: event.color,
-      });
-      continue;
-    }
-    currentCluster.events.push(event);
-    currentCluster.timestamp =
-      (currentCluster.events[0].start + event.start) / 2;
-    if (
-      currentCluster.events.some((item) => item.color !== currentCluster.color)
-    ) {
-      currentCluster.color = "#536b60";
-    }
-  }
-  const todoistIconPositions = todoistClusters.map((cluster) =>
-    x(cluster.timestamp),
-  );
-  const todoistIconGap = Math.min(
-    40,
-    (WIDTH - RIGHT - LEFT - 38) / Math.max(1, todoistIconPositions.length - 1),
-  );
-  for (let index = 0; index < todoistIconPositions.length; index += 1) {
-    todoistIconPositions[index] = Math.max(
-      LEFT + 19,
-      todoistIconPositions[index],
-    );
-    if (index > 0)
-      todoistIconPositions[index] = Math.max(
-        todoistIconPositions[index],
-        todoistIconPositions[index - 1] + todoistIconGap,
-      );
-  }
-  const todoistOverflow = Math.max(
-    0,
-    (todoistIconPositions.at(-1) ?? 0) - (WIDTH - RIGHT - 19),
-  );
-  if (todoistOverflow) {
-    for (let index = 0; index < todoistIconPositions.length; index += 1)
-      todoistIconPositions[index] -= todoistOverflow;
-  }
+  const todoistClusters = buildTodoistClusters(todoistRecords, start, end);
+  const todoistIconPositions = positionTodoistClusters(todoistClusters, x);
   const todoistClusterItem = (cluster: TodoistCluster): RecordItem => ({
     start: cluster.events[0].start,
-    end: cluster.events.at(-1)?.start ?? cluster.events[0].start,
+    end: cluster.events.at(-1)!.start,
     label: "Todoist",
     detail: cluster.events
       .map((item) => `${localLabel(item.start, timezone)} · ${item.detail}`)
@@ -514,8 +564,7 @@ export function DayTimelineChart({
     let tick = Math.ceil(start / tickEvery) * tickEvery;
     tick < end;
     tick += tickEvery
-  )
-    ticks.push(tick);
+  ) ticks.push(tick);
   const markers = new Map<string, number>();
 
   return (
@@ -775,7 +824,7 @@ export function DayTimelineChart({
             .filter((item) => item.end > start && item.start < end)
             .map((item, index) => (
               <rect
-                key={`activity-${index}`}
+                key={`activity-${item.start}:${item.end}:${item.label}`}
                 x={x(Math.max(start, item.start))}
                 y={ACTIVITY_TOP + 2}
                 width={Math.max(
@@ -799,7 +848,7 @@ export function DayTimelineChart({
               const to = Math.min(end, item.end);
               return (
                 <rect
-                  key={`productivity-${index}`}
+                  key={`productivity-${item.start}:${item.end}:${item.label}`}
                   x={x(from)}
                   y={PRODUCTIVITY_TOP + lane * 8}
                   width={Math.max(1, x(to) - x(from))}
@@ -827,10 +876,10 @@ export function DayTimelineChart({
             const cy = EVENT_TOP + 9 + (stack % 3) * 13;
             return (
               <circle
-                key={`event-${index}`}
+                key={`event-${item.start}:${item.kind}:${item.label}:${item.detail}`}
                 cx={x(item.start)}
                 cy={cy}
-                r={item.kind === "welltory" ? 5 : 4.5}
+                r="4.5"
                 fill={item.color}
                 className="chart-event-dot"
                 onClick={(event) => selectAtCursor(item, event)}
@@ -852,7 +901,7 @@ export function DayTimelineChart({
                 : String(cluster.events.length);
             return (
               <foreignObject
-                key={`todoist-cluster-${index}`}
+                key={`todoist-cluster-${cluster.timestamp}`}
                 x={todoistIconPositions[index] - 19}
                 y={TODOIST_TOP - 7}
                 width="38"
@@ -892,7 +941,7 @@ export function DayTimelineChart({
           })}
           {visibleEmaEvents.map((item, index) => (
             <circle
-              key={`ema-${index}`}
+              key={`ema-${item.start}:${item.kind}:${item.label}`}
               cx={x(item.start)}
               cy={EMA_TOP + 9 + (index % 3) * 12}
               r="5"
@@ -976,12 +1025,20 @@ export function DayTimelineChart({
   );
 }
 
-type WelltoryMeasurement = {
+type WelltoryMeasurement = Readonly<{
   timestamp: number;
   energy?: number;
   stress?: number;
   details: string[];
-};
+}>;
+
+type WelltoryTrackProps = Readonly<{
+  measurements: WelltoryMeasurement[];
+  xScale: (time: number) => number;
+  centerY: number;
+  timezone: string;
+  onSelect: (item: RecordItem, event: MouseEvent<Element>) => void;
+}>;
 
 function WelltoryTrack({
   measurements,
@@ -989,13 +1046,7 @@ function WelltoryTrack({
   centerY,
   timezone,
   onSelect,
-}: {
-  measurements: WelltoryMeasurement[];
-  xScale: (time: number) => number;
-  centerY: number;
-  timezone: string;
-  onSelect: (item: RecordItem, event: MouseEvent<Element>) => void;
-}) {
+}: WelltoryTrackProps) {
   const maxHeight = 42;
   const barWidth = 12;
   return (

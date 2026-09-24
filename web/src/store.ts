@@ -89,6 +89,22 @@ export class DashboardStore {
       const result = await syncDashboardDataStream(
         body,
         (event) => {
+          if (event.status !== 'success') {
+            const details = {
+              source: event.source,
+              status: event.status,
+              from: body.from,
+              to: body.to,
+              records: event.records,
+              latestStoredTimestamp: event.latest ?? null,
+              issue: event.issue ?? null,
+            }
+            if (event.status === 'failed') {
+              console.error('[dashboard-sync] source synchronization failed', details)
+            } else {
+              console.warn('[dashboard-sync] source synchronization incomplete', details)
+            }
+          }
           runInAction(() => {
             this.syncProgress[event.source] = {
               source: event.source,
@@ -129,6 +145,11 @@ export class DashboardStore {
           .join(' · ')
       })
     } catch (error) {
+      console.error('[dashboard-sync] synchronization request failed', {
+        from: this.from,
+        to: this.to,
+        error,
+      })
       runInAction(() => {
         this.error = error instanceof Error ? error.message : 'Обновление данных не выполнено'
         for (const progress of Object.values(this.syncProgress)) {

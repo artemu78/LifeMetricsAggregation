@@ -781,20 +781,60 @@ const TimelineRoute = observer(function TimelineRoute() {
   nextDateValue.setUTCDate(nextDateValue.getUTCDate() + 1)
   const nextDate = `${nextDateValue.getUTCFullYear()}-${String(nextDateValue.getUTCMonth() + 1).padStart(2, "0")}-${String(nextDateValue.getUTCDate()).padStart(2, "0")}`
   const nextDay = store.dashboard?.days.find((item) => item.date === nextDate)
+  const dialogRef = useRef<HTMLDialogElement>(null)
   const closeTimeline = () => navigate(`/day/${day?.date ?? date}`)
   useEffect(() => {
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") closeTimeline()
+    const dialog = dialogRef.current
+    if (!dialog) return
+    if (!dialog.open) dialog.showModal()
+    return () => {
+      if (dialog.open) dialog.close()
     }
-    document.addEventListener("keydown", closeOnEscape)
-    return () => document.removeEventListener("keydown", closeOnEscape)
-  }, [date, navigate])
+  }, [day])
   if (!store.dashboard) return null
   if (!day) return <Navigate to="/" replace />
-  return <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) closeTimeline() }}><section className="modal timeline-modal" role="dialog" aria-modal="true" aria-labelledby="timeline-title">
-    <header><div><p className="eyebrow">Хронология дня · {store.dashboard.timezone}</p><h2 id="timeline-title" className="timeline-title">Ход дня <time>{new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(`${day.date}T12:00:00Z`))}</time></h2><p className="muted">Все сохранённые измерения и события в порядке времени</p></div><button className="icon-button" onClick={closeTimeline} aria-label="Закрыть"><X aria-hidden="true" /></button></header>
-    <DayTimelineChart day={day} timezone={store.dashboard.timezone} nextDaySleepMetrics={nextDay?.detail.braceletMetrics} />
-  </section></div>
+  return (
+    <dialog
+      ref={dialogRef}
+      className="modal-backdrop timeline-backdrop"
+      aria-labelledby="timeline-title"
+      onCancel={(event) => {
+        event.preventDefault()
+        closeTimeline()
+      }}
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) closeTimeline()
+      }}
+    >
+      <section className="modal timeline-modal">
+        <header>
+          <div>
+            <p className="eyebrow">Хронология дня · {store.dashboard.timezone}</p>
+            <h2 id="timeline-title" className="timeline-title">
+              Ход дня{" "}
+              <time>
+                {new Intl.DateTimeFormat("ru-RU", {
+                  day: "numeric",
+                  month: "long",
+                  year: "numeric",
+                  timeZone: "UTC",
+                }).format(new Date(`${day.date}T12:00:00Z`))}
+              </time>
+            </h2>
+            <p className="muted">Все сохранённые измерения и события в порядке времени</p>
+          </div>
+          <button className="icon-button" onClick={closeTimeline} aria-label="Закрыть">
+            <X aria-hidden="true" />
+          </button>
+        </header>
+        <DayTimelineChart
+          day={day}
+          timezone={store.dashboard.timezone}
+          nextDaySleepMetrics={nextDay?.detail.braceletMetrics}
+        />
+      </section>
+    </dialog>
+  )
 })
 
 const DayRoute = observer(function DayRoute() {

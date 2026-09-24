@@ -64,7 +64,7 @@ class MetricPoint(BaseModel):
     )
     timestamp: AwareDatetime
     metric: str
-    value: float | None = None
+    value: float | None
     valueText: str | None = None
     unit: str | None = None
 
@@ -77,7 +77,7 @@ class TaskItem(BaseModel):
     timestamp: AwareDatetime
 
 
-class EmaStatus(StrEnum):
+class Status(StrEnum):
     pending = 'pending'
     answered = 'answered'
     dismissed = 'dismissed'
@@ -89,7 +89,7 @@ class EmaEventItem(BaseModel):
         extra='forbid',
     )
     timestamp: AwareDatetime
-    status: EmaStatus
+    status: Status
 
 
 class Perspective(StrEnum):
@@ -189,7 +189,7 @@ class SourceIssue(BaseModel):
     diagnosticId: str | None = None
 
 
-class Status(StrEnum):
+class Status1(StrEnum):
     idle = 'idle'
     pending = 'pending'
     success = 'success'
@@ -200,7 +200,7 @@ class DriveConnectionState(BaseModel):
     model_config = ConfigDict(
         extra='forbid',
     )
-    status: Status
+    status: Status1
     sessionId: str | None = None
     authorizationUrl: str | None = None
     issue: SourceIssue | None = None
