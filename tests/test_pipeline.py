@@ -464,9 +464,14 @@ class PipelineTest(unittest.TestCase):
             ],
             "next_cursor": None,
         }
+        activities = {"results": [], "next_cursor": None}
         active = {"results": [], "next_cursor": None}
+        active_fallback = {"results": [], "next_cursor": None}
         with patch.dict(os.environ, {"TEST_TODOIST_TOKEN": "test-token"}):
-            with patch("live_life.collectors._get_json", side_effect=[completed, active]):
+            with patch(
+                "live_life.collectors._get_json",
+                side_effect=[completed, activities, active, active_fallback],
+            ):
                 result = collect_todoist(self.config, date(2026, 8, 10))
 
         self.assertEqual(result["completed"], 1)
