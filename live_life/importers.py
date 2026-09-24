@@ -188,6 +188,17 @@ def _fitness_metrics(record: dict) -> list[tuple[str, str, float, str]]:
     return []
 
 
+def _fitness_metric_payload(record: dict, metric: str) -> dict:
+    """Store interpretation context while keeping full source data in cached files."""
+    payload = {
+        "recordType": record.get("recordType"),
+        "origin": record.get("origin", ""),
+    }
+    if metric == "fitness_drive.steps" or metric.startswith("fitness_drive.sleep."):
+        payload.update(startTime=record.get("startTime"), endTime=record.get("endTime"))
+    return payload
+
+
 def _fitness_manifest(config: Config) -> dict[str, dict]:
     """Return Drive metadata keyed by local cache filename."""
     if not config.fitness_drive_cache:
@@ -230,6 +241,15 @@ def import_fitness_drive(config: Config) -> dict[str, object]:
             WHERE source = 'fitness_drive' AND origin_file IS NULL
             """
         ).fetchone()["count"]
+        legacy_heart_rate_ids = conn.execute(
+            """
+            SELECT COUNT(*) AS count FROM metric_events
+            WHERE source = 'fitness_drive'
+              AND metric = 'fitness_drive.heart_rate'
+              AND external_id LIKE 'heart_rate:%:%'
+            LIMIT 1
+            """
+        ).fetchone()["count"]
 
     changed_paths = paths if legacy_rows > 0 else [
         path for path in paths
@@ -239,16 +259,22 @@ def import_fitness_drive(config: Config) -> dict[str, object]:
     # database stores only one origin_file. Reconcile every cached export when
     # anything changes so deleting the row owned by one file cannot hide an
     # identical row still supplied by an unchanged file.
-    rebuild = legacy_rows > 0 or bool(changed_paths)
+    rebuild = legacy_rows > 0 or legacy_heart_rate_ids > 0 or bool(changed_paths)
     selected = paths if rebuild else []
 
     staged: dict[Path, list[tuple[str, str, str, float, str, dict]]] = {}
+    file_ranks: dict[Path, tuple[str, int, str]] = {}
     records = 0
     affected_dates: set[str] = set()
     local_tz = ZoneInfo(config.timezone)
     for path in selected:
         staged_rows: list[tuple[str, str, str, float, str, dict]] = []
         file_meta = manifest.get(path.name, {})
+        file_ranks[path.resolve()] = (
+            str(file_meta.get("modifiedTime") or file_meta.get("remote_modified_at") or ""),
+            path.stat().st_mtime_ns,
+            path.name,
+        )
         remote_id = file_meta.get("remote_id") or path.name.split("--", 1)[0]
         for document in _fitness_documents(path):
             header = document.get("header", {})
@@ -273,8 +299,29 @@ def import_fitness_drive(config: Config) -> dict[str, object]:
                         - timedelta(hours=config.day_boundary_hour)
                     ).date().isoformat()
                     affected_dates.add(logical_date)
+                    if record.get("recordType") == "heart_rate":
+                        # Exports batch samples into records of varying sizes. Hashing
+                        # the full batch gave the same sample a new identity whenever
+                        # an overlapping export split that batch differently.
+                        sample_identity = json.dumps(
+                            [record.get("origin", ""), normalized, metric],
+                            ensure_ascii=False,
+                            separators=(",", ":"),
+                        )
+                        external_id = "heart_rate:" + sha256(
+                            sample_identity.encode("utf-8")
+                        ).hexdigest()
+                    else:
+                        external_id = f"{record.get('recordType', 'fitness')}:{record_id}:{index}"
                     staged_rows.append(
-                        (f"{record.get('recordType', 'fitness')}:{record_id}:{index}", normalized, metric, value, unit, record)
+                        (
+                            external_id,
+                            normalized,
+                            metric,
+                            value,
+                            unit,
+                            _fitness_metric_payload(record, metric),
+                        )
                     )
         staged[path.resolve()] = staged_rows
 
@@ -282,13 +329,16 @@ def import_fitness_drive(config: Config) -> dict[str, object]:
     with connect(config.database) as conn:
         if rebuild:
             conn.execute("DELETE FROM metric_events WHERE source = 'fitness_drive'")
-        for path, rows in staged.items():
+        ordered_staged = sorted(
+            staged.items(), key=lambda item: file_ranks[item[0]], reverse=True
+        )
+        for path, rows in ordered_staged:
             if not rebuild:
                 conn.execute(
                     "DELETE FROM metric_events WHERE source = 'fitness_drive' AND origin_file = ?",
                     (str(path),),
                 )
-            for external_id, occurred_at, metric, value, unit, record in rows:
+            for external_id, occurred_at, metric, value, unit, payload in rows:
                 if insert_metric(
                     conn,
                     source="fitness_drive",
@@ -298,7 +348,7 @@ def import_fitness_drive(config: Config) -> dict[str, object]:
                     value_num=value,
                     value_text=None,
                     unit=unit,
-                    payload=record,
+                    payload=payload,
                     origin_file=str(path),
                 ):
                     metrics += 1
