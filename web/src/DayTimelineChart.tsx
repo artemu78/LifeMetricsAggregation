@@ -32,21 +32,22 @@ function sortCopy<T>(items: T[], compare: (a: T, b: T) => number): T[] {
 }
 
 const WIDTH = 1240;
-const HEIGHT = 760;
+const HEIGHT = 804;
 const LEFT = 128;
 const RIGHT = 26;
 const HEART_TOP = 36;
 const HEART_BOTTOM = 264;
 const STEPS_TOP = 276;
 const STEPS_BOTTOM = 306;
-const ACTIVITY_TOP = 322;
-const PRODUCTIVITY_TOP = 384;
-const WELLTORY_TOP = 444;
-const WELLTORY_CENTER = 496;
-const EVENT_TOP = 562;
-const TODOIST_TOP = 610;
-const EMA_TOP = 658;
-const AXIS_Y = 710;
+const WORKOUTS_TOP = 320;
+const ACTIVITY_TOP = 366;
+const PRODUCTIVITY_TOP = 428;
+const WELLTORY_TOP = 488;
+const WELLTORY_CENTER = 540;
+const EVENT_TOP = 606;
+const TODOIST_TOP = 654;
+const EMA_TOP = 702;
+const AXIS_Y = 754;
 const PRODUCTIVITY_COLORS: Record<string, string> = {
   "-2": "#cf5c4f",
   "-1": "#db8b51",
@@ -68,11 +69,13 @@ const EVENT_COLORS: Record<string, string> = {
   welltory: "#a75c91",
   metric: "#667f78",
   sleep: "#7779b9",
+  workout: "#4c7f6d",
   "ema-answered": "#35876b",
   "ema-pending": "#c39439",
   "ema-dismissed": "#b45c54",
   "ema-expired": "#87948e",
 };
+const WORKOUT_COLOR = "#4c7f6d";
 
 function buildHeartSeries(metrics: Metric[]) {
   const heart = metrics
@@ -102,6 +105,42 @@ function buildStepSeries(metrics: Metric[]) {
   const steps = [...buckets]
     .map(([time, value]) => ({ time, value }));
   return sortCopy(steps, (a, b) => a.time - b.time);
+}
+
+function formatWorkoutDuration(seconds: number): string {
+  if (seconds < 60) return `${Math.max(1, Math.round(seconds))} сек`;
+  const totalMinutes = Math.round(seconds / 60);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours > 0 && minutes > 0) return `${hours} ч ${minutes} мин`;
+  if (hours > 0) return `${hours} ч`;
+  return `${minutes} мин`;
+}
+
+function buildWorkoutSegments(metrics: Metric[]): RecordItem[] {
+  const workouts = metrics
+    .filter(
+      (point) =>
+        point.metric === "fitness_drive.exercise" && point.value != null,
+    )
+    .map((point) => {
+      const startMs = Date.parse(point.timestamp);
+      const rawSeconds = Number(point.value);
+      const seconds = Math.max(0, rawSeconds);
+      const endMs = startMs + seconds * 1000;
+      const durationText = seconds > 0 ? formatWorkoutDuration(seconds) : "";
+      const title = point.valueText?.trim() || "Тренировка";
+      const detail = durationText ? `${title} · ${durationText}` : title;
+      return {
+        start: startMs,
+        end: endMs,
+        label: title,
+        detail,
+        color: WORKOUT_COLOR,
+        kind: "workout",
+      };
+    });
+  return sortCopy(workouts, (a, b) => a.start - b.start);
 }
 
 function buildSleepBoundaries(
@@ -221,9 +260,9 @@ function buildWelltoryMeasurements(
 function buildTodoistRecords(day: Day): RecordItem[] {
   const records: RecordItem[] = [];
   const sources = [
-    { tasks: day.detail.createdTasks, kind: "todo-created", action: "создана" },
-    { tasks: day.detail.completedTasks, kind: "todo-completed", action: "закрыта" },
-    { tasks: day.detail.deletedTasks, kind: "todo-deleted", action: "удалена" },
+    { tasks: day.detail?.createdTasks ?? [], kind: "todo-created", action: "создана" },
+    { tasks: day.detail?.completedTasks ?? [], kind: "todo-completed", action: "закрыта" },
+    { tasks: day.detail?.deletedTasks ?? [], kind: "todo-deleted", action: "удалена" },
   ] as const;
   for (const source of sources) {
     for (const task of source.tasks) {
@@ -247,14 +286,16 @@ function buildEmaRecords(day: Day): RecordItem[] {
     dismissed: "отклонено",
     expired: "время ответа истекло",
   };
-  return day.detail.emaEvents.map((event) => ({
-    start: Date.parse(event.timestamp),
-    end: 0,
-    label: event.status,
-    detail: `EMA · ${statuses[event.status] ?? event.status}`,
-    color: EVENT_COLORS[`ema-${event.status}`],
-    kind: `ema-${event.status}`,
-  }));
+  return (day.detail?.emaEvents ?? [])
+    .filter((event) => event.status === "answered")
+    .map((event) => ({
+      start: Date.parse(event.timestamp),
+      end: 0,
+      label: event.status,
+      detail: `EMA · ${statuses[event.status] ?? event.status}`,
+      color: EVENT_COLORS[`ema-${event.status}`] ?? EVENT_COLORS["ema-answered"],
+      kind: `ema-${event.status}`,
+    }));
 }
 
 function buildMetricEvents(metrics: Metric[]): RecordItem[] {
@@ -467,13 +508,14 @@ export function DayTimelineChart({
     selectionPointerRef.current = null;
     setSelected(null);
   };
-  const metrics = day.detail.braceletMetrics;
+  const metrics = day.detail?.braceletMetrics ?? [];
   const heart = buildHeartSeries(metrics);
   const stepSeries = buildStepSeries(metrics);
-  const activity = day.detail.rescueTime.filter(
+  const rescueTime = day.detail?.rescueTime ?? [];
+  const activity = rescueTime.filter(
     (item) => item.perspective === "activity",
   );
-  const productivity = day.detail.rescueTime.filter(
+  const productivity = rescueTime.filter(
     (item) => item.perspective === "productivity",
   );
   const maxStepCount = Math.max(1, ...stepSeries.map((item) => item.value));
@@ -519,10 +561,11 @@ export function DayTimelineChart({
   const hoverBoxX = Math.max(LEFT, Math.min(WIDTH - RIGHT - 112, hoverX - 56));
   const hoverBoxY = Math.max(HEART_TOP + 3, hoverY - 44);
 
-  const activitySegments = buildActivitySegments(day.detail.rescueTime);
-  const productivitySegments = buildProductivitySegments(day.detail.rescueTime);
+  const activitySegments = buildActivitySegments(rescueTime);
+  const productivitySegments = buildProductivitySegments(rescueTime);
+  const workoutSegments = buildWorkoutSegments(metrics);
   const welltoryMeasurements = buildWelltoryMeasurements(
-    day.detail.welltoryMetrics,
+    day.detail?.welltoryMetrics ?? [],
     start,
     end,
   );
@@ -538,6 +581,9 @@ export function DayTimelineChart({
   const hasBedtimeInLogicalDay = bedtime !== null;
   const hasWakeInLogicalDay = wake !== null;
   const eventRecords = [...buildMetricEvents(metrics), ...sleepBoundaries.events];
+  const visibleWorkoutSegments = workoutSegments.filter(
+    (item) => item.end > start && item.start < end,
+  );
   const visibleEvents = eventRecords.filter(
     (item) => item.start >= start && item.start <= end,
   );
@@ -638,6 +684,9 @@ export function DayTimelineChart({
           </text>
           <text x="18" y={STEPS_TOP + 19} className="chart-lane-label">
             ШАГИ
+          </text>
+          <text x="18" y={WORKOUTS_TOP + 16} className="chart-lane-label">
+            ТРЕНИРОВКИ
           </text>
           <text x="18" y={ACTIVITY_TOP + 15} className="chart-lane-label">
             АКТИВНОСТЬ
@@ -820,6 +869,26 @@ export function DayTimelineChart({
                 </g>
               );
             })}
+
+          {visibleWorkoutSegments.map((item) => {
+            const from = Math.max(start, item.start);
+            const to = Math.min(end, item.end);
+            return (
+              <rect
+                key={`workout-${item.start}:${item.end}:${item.label}`}
+                x={x(from)}
+                y={WORKOUTS_TOP + 2}
+                width={Math.max(4, x(to) - x(from))}
+                height="18"
+                rx="3"
+                fill={item.color}
+                className="chart-duration-segment chart-workout-segment"
+                onClick={(event) => selectAtCursor(item, event)}
+                onMouseEnter={(event) => selectAtCursor(item, event)}
+                onMouseMove={(event) => selectAtCursor(item, event)}
+              />
+            );
+          })}
 
           {activitySegments
             .filter((item) => item.end > start && item.start < end)
@@ -1014,6 +1083,8 @@ export function DayTimelineChart({
         </div>
       )}
       {!heart.length &&
+        !stepSeries.length &&
+        !workoutSegments.length &&
         !activity.length &&
         !productivity.length &&
         !welltoryMeasurements.length &&

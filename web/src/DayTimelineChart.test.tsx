@@ -120,12 +120,18 @@ describe("DayTimelineChart", () => {
     expect(container.querySelectorAll(".chart-step-bar")).toHaveLength(2);
     expect(container.querySelectorAll(".chart-sleep-boundary")).toHaveLength(2);
     expect(container.querySelectorAll(".welltory-measurement")).toHaveLength(4);
-    expect(container.querySelectorAll(".chart-duration-segment")).toHaveLength(5);
+    expect(container.querySelectorAll(".chart-duration-segment")).toHaveLength(6);
+    expect(container.querySelectorAll(".chart-workout-segment")).toHaveLength(1);
+    expect(within(container).getByText("ТРЕНИРОВКИ")).toBeInTheDocument();
     expect(container.querySelectorAll(".todoist-marker")).toHaveLength(2);
     expect(within(container).getByText("3", { selector: ".todoist-count-badge" })).toBeInTheDocument();
     expect(container.querySelectorAll(".chart-time-axis .chart-tick").length).toBeGreaterThan(0);
     expect(container.querySelector(".chart-axis-sticky")).toBeInTheDocument();
     expect(observer.observe).toHaveBeenCalled();
+
+    const workout = container.querySelector(".chart-workout-segment")!;
+    fireEvent.mouseEnter(workout, { clientX: 250, clientY: 330 });
+    expect(screen.getByRole("tooltip")).toHaveTextContent("Тренировка · 1 сек");
 
     const step = container.querySelector(".chart-step-hit-area")!;
     fireEvent.mouseEnter(step, { clientX: 200, clientY: 120 });
@@ -291,9 +297,93 @@ describe("DayTimelineChart", () => {
     const dialog = await screen.findByRole("dialog", { name: /Ход дня/ });
     await waitFor(() => expect((dialog as HTMLDialogElement).open).toBe(true));
     fireEvent.click(screen.getByRole("button", { name: "Закрыть Ход дня" }));
-    await waitFor(() => expect((dialog as HTMLDialogElement).open).toBe(false));
-    expect(container.querySelector(".day-chart-card")).not.toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: day.date })).toBeInTheDocument();
+    expect(container.querySelector(".day-detail-modal .day-chart-card")).toBeInTheDocument();
     await waitFor(() => expect(dashboardStore.loading).toBe(false));
+    dashboardStore.dashboard = null;
+  });
+
+  it("does not show EMA events without responses and only shows answered EMA events", () => {
+    const emaDay: Day = {
+      ...day,
+      detail: {
+        ...day.detail,
+        emaEvents: [
+          { timestamp: "2026-09-24T12:00:00+03:00", status: "pending" },
+          { timestamp: "2026-09-24T12:01:00+03:00", status: "answered" },
+          { timestamp: "2026-09-24T12:02:00+03:00", status: "dismissed" },
+          { timestamp: "2026-09-24T12:03:00+03:00", status: "expired" },
+        ],
+      },
+    };
+    const { container } = render(<DayTimelineChart day={emaDay} timezone="Europe/Moscow" />);
+    const emaDots = container.querySelectorAll("circle[fill='#35876b']");
+    expect(emaDots).toHaveLength(1);
+    expect(container.querySelector("circle[fill='#c39439']")).not.toBeInTheDocument();
+    expect(container.querySelector("circle[fill='#b45c54']")).not.toBeInTheDocument();
+    expect(container.querySelector("circle[fill='#87948e']")).not.toBeInTheDocument();
+
+    fireEvent.mouseEnter(emaDots[0], { clientX: 350, clientY: 220 });
+    expect(screen.getByRole("tooltip")).toHaveTextContent("EMA · ответ отправлен");
+  });
+
+  it("renders workout blocks with durations, titles, and hover tooltip on the separate track", () => {
+    const workoutDay: Day = {
+      ...day,
+      detail: {
+        ...day.detail,
+        braceletMetrics: [
+          {
+            timestamp: "2026-09-24T08:00:00+03:00",
+            metric: "fitness_drive.exercise",
+            value: 2700,
+            valueText: "Бег",
+          },
+          {
+            timestamp: "2026-09-24T18:00:00+03:00",
+            metric: "fitness_drive.exercise",
+            value: 4800,
+          },
+        ],
+      },
+    };
+    const { container } = render(<DayTimelineChart day={workoutDay} timezone="Europe/Moscow" />);
+    const workoutSegments = container.querySelectorAll(".chart-workout-segment");
+    expect(workoutSegments).toHaveLength(2);
+
+    fireEvent.mouseEnter(workoutSegments[0], { clientX: 200, clientY: 330 });
+    expect(screen.getByRole("tooltip")).toHaveTextContent("Бег · 45 мин");
+
+    fireEvent.mouseEnter(workoutSegments[1], { clientX: 600, clientY: 330 });
+    expect(screen.getByRole("tooltip")).toHaveTextContent("Тренировка · 1 ч 20 мин");
+  });
+
+  it("renders day-chart-card inside day-detail-modal instead of the full timeline link", async () => {
+    const dashboard = {
+      from: day.date,
+      to: day.date,
+      timezone: "Europe/Moscow",
+      generatedAt: "2026-09-24T12:00:00+03:00",
+      days: [day],
+    };
+    dashboardStore.dashboard = dashboard as unknown as typeof dashboardStore.dashboard;
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => dashboard,
+    }));
+
+    const { container } = render(
+      <MemoryRouter initialEntries={[`/day/${day.date}`]}>
+        <App />
+      </MemoryRouter>,
+    );
+
+    const modal = await screen.findByRole("dialog", { name: day.date });
+    expect(modal).toHaveClass("day-detail-modal");
+    expect(within(modal).getByRole("region", { name: "Общий график событий и показателей дня" })).toBeInTheDocument();
+    expect(within(modal).queryByText("Открыть полную хронологию дня")).not.toBeInTheDocument();
+    expect(container.querySelector(".day-detail-modal .day-chart-card")).toBeInTheDocument();
+
     dashboardStore.dashboard = null;
   });
 });
