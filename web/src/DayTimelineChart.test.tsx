@@ -261,7 +261,7 @@ describe("DayTimelineChart", () => {
     expect(screen.getByRole("tooltip")).toHaveTextContent("Task 0");
   });
 
-  it("opens the timeline route in a native dialog and closes it on backdrop interaction", async () => {
+  it("opens the timeline route in a native dialog and closes it from the backdrop control", async () => {
     const dashboard = {
       from: day.date,
       to: day.date,
@@ -290,7 +290,7 @@ describe("DayTimelineChart", () => {
     );
     const dialog = await screen.findByRole("dialog", { name: /Ход дня/ });
     await waitFor(() => expect((dialog as HTMLDialogElement).open).toBe(true));
-    fireEvent.mouseDown(dialog);
+    fireEvent.click(screen.getByRole("button", { name: "Закрыть Ход дня" }));
     await waitFor(() => expect((dialog as HTMLDialogElement).open).toBe(false));
     expect(container.querySelector(".day-chart-card")).not.toBeInTheDocument();
     await waitFor(() => expect(dashboardStore.loading).toBe(false));

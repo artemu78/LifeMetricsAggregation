@@ -802,10 +802,13 @@ const TimelineRoute = observer(function TimelineRoute() {
         event.preventDefault()
         closeTimeline()
       }}
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) closeTimeline()
-      }}
     >
+      <button
+        type="button"
+        className="timeline-backdrop-dismiss"
+        aria-label="Закрыть Ход дня"
+        onClick={closeTimeline}
+      />
       <section className="modal timeline-modal">
         <header>
           <div>

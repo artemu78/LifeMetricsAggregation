@@ -510,6 +510,7 @@ export function DayTimelineChart({
       Math.abs(x(candidate.time) - pointerX) < Math.abs(x(best.time) - pointerX)
         ? candidate
         : best,
+      heart[0]!,
     );
     setHoveredHeart(nearest);
   };

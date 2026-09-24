@@ -270,12 +270,11 @@ def _stream_sync_events(start: date, end: date, *, timeout: int):
         yield _stream_sync_error_event("SYNC_TIMEOUT", "Обновление данных заняло слишком много времени. Повторите обновление.")
     except Exception as exc:
         proc.kill()
-        LOGGER.error(
+        LOGGER.exception(
             "dashboard_sync_stream_failed from=%s to=%s error_type=%s",
             start.isoformat(),
             end.isoformat(),
             type(exc).__name__,
-            exc_info=(type(exc), None, exc.__traceback__),
         )
         yield _stream_sync_error_event("SYNC_FAILED", "Не удалось завершить обновление данных.")
     finally:
