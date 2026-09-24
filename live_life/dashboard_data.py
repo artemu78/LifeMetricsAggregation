@@ -48,6 +48,8 @@ def build_dashboard(config: Config, start: date, end: date) -> dict:
     metrics: dict[str, dict[str, list[dict]]] = defaultdict(lambda: defaultdict(list))
     created: dict[str, list[dict]] = defaultdict(list)
     completed: dict[str, list[dict]] = defaultdict(list)
+    deleted: dict[str, list[dict]] = defaultdict(list)
+    ema_events: dict[str, list[dict]] = defaultdict(list)
     run_statuses: dict[tuple[str, str], dict] = {}
 
     def logical_date(timestamp: str) -> str:
@@ -59,13 +61,13 @@ def build_dashboard(config: Config, start: date, end: date) -> dict:
     with connect(config.database) as conn:
         for row in conn.execute(
             """
-            SELECT source, occurred_at, metric, value_num, unit
+            SELECT source, occurred_at, metric, value_num, value_text, unit
             FROM metric_events
             WHERE occurred_at >= ? AND occurred_at < ?
               AND source IN ('fitness_drive', 'welltory', 'rescuetime')
               AND metric NOT LIKE 'fitness_drive.sleep.%_seconds'
               AND metric != 'fitness_drive.steps'
-              AND value_num IS NOT NULL
+              AND (value_num IS NOT NULL OR value_text IS NOT NULL)
             ORDER BY occurred_at
             """,
             (start_utc, end_utc),
@@ -76,6 +78,7 @@ def build_dashboard(config: Config, start: date, end: date) -> dict:
                     "timestamp": row["occurred_at"],
                     "metric": row["metric"],
                     "value": row["value_num"],
+                    "valueText": row["value_text"],
                     "unit": row["unit"],
                 }
             )
@@ -106,6 +109,24 @@ def build_dashboard(config: Config, start: date, end: date) -> dict:
         ):
             completed[logical_date(row["completed_at"])].append(
                 {"content": row["content"], "timestamp": row["completed_at"]}
+            )
+        for row in conn.execute(
+            """SELECT content, deleted_at FROM deleted_tasks
+            WHERE source = 'todoist' AND deleted_at >= ? AND deleted_at < ?
+            ORDER BY deleted_at""",
+            (start_utc, end_utc),
+        ):
+            deleted[logical_date(row["deleted_at"])].append(
+                {"content": row["content"], "timestamp": row["deleted_at"]}
+            )
+        for row in conn.execute(
+            """SELECT scheduled_at, status FROM ema_events
+            WHERE scheduled_at >= ? AND scheduled_at < ?
+            ORDER BY scheduled_at""",
+            (start_utc, end_utc),
+        ):
+            ema_events[logical_date(row["scheduled_at"])].append(
+                {"timestamp": row["scheduled_at"], "status": row["status"]}
             )
         for row in conn.execute(
             """
@@ -146,7 +167,7 @@ def build_dashboard(config: Config, start: date, end: date) -> dict:
                 has_legacy_data = {
                     "bracelet": bool(bracelet_metrics),
                     "welltory": bool(welltory_metrics),
-                    "todoist": bool(created[day_key] or completed[day_key]),
+                    "todoist": bool(created[day_key] or completed[day_key] or deleted[day_key]),
                     "rescuetime": bool(rescue_rows),
                 }[source]
                 status = {
@@ -185,6 +206,7 @@ def build_dashboard(config: Config, start: date, end: date) -> dict:
                 "todoist": {
                     "created": len(created[day_key]),
                     "completed": len(completed[day_key]),
+                    "deleted": len(deleted[day_key]),
                 },
                 "rescuetime": {
                     "available": bool(rescue_rows),
@@ -195,6 +217,8 @@ def build_dashboard(config: Config, start: date, end: date) -> dict:
                     "welltoryMetrics": welltory_metrics,
                     "createdTasks": created[day_key],
                     "completedTasks": completed[day_key],
+                    "deletedTasks": deleted[day_key],
+                    "emaEvents": ema_events[day_key],
                     "rescueTime": rescue_rows,
                 },
             }

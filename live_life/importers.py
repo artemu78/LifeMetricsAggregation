@@ -142,6 +142,18 @@ def _fitness_documents(path: Path) -> list[dict]:
     return [document]
 
 
+def _fitness_batch(document: dict) -> tuple[dict, list[dict], list[dict]]:
+    """Return the health records and EMA events from legacy or combined exports."""
+    batch = document.get("healthConnectBatch", document)
+    if not isinstance(batch, dict):
+        raise ValueError("Fitness export healthConnectBatch must be an object")
+    records = batch.get("records", [])
+    ema_events = document.get("emaEvents", [])
+    if not isinstance(records, list) or not isinstance(ema_events, list):
+        raise ValueError("Fitness export records and emaEvents must be arrays")
+    return batch, records, ema_events
+
+
 def _duration_seconds(start: str, end: str) -> float:
     """Return the signed elapsed seconds between two ISO timestamps."""
     start_time = datetime.fromisoformat(start.replace("Z", "+00:00"))
@@ -293,6 +305,7 @@ def import_fitness_drive(config: Config) -> dict[str, object]:
     selected = paths if rebuild else []
 
     staged: dict[Path, list[tuple[str, str, str, float, str, dict]]] = {}
+    staged_ema: dict[Path, list[tuple[str, str, str | None, str]]] = {}
     file_ranks: dict[Path, tuple[str, int, str]] = {}
     records = 0
     affected_dates: set[str] = set()
@@ -306,14 +319,15 @@ def import_fitness_drive(config: Config) -> dict[str, object]:
             path.name,
         )
         remote_id = file_meta.get("remote_id") or path.name.split("--", 1)[0]
+        staged_ema_rows: list[tuple[str, str, str | None, str]] = []
         for document in _fitness_documents(path):
-            header = document.get("header", {})
+            batch, document_records, ema_events = _fitness_batch(document)
+            header = batch.get("header", {})
             if header.get("schemaVersion") != 1:
                 raise ValueError(
                     f"Unsupported fitness schema in {path.name}: {header.get('schemaVersion')}"
                 )
-            document_records = document.get("records", [])
-            if header.get("recordCount") != len(document_records):
+            if header.get("recordCount") is not None and header["recordCount"] != len(document_records):
                 raise ValueError(f"Fitness record count mismatch: {path.name}")
             for record in document_records:
                 records += 1
@@ -353,12 +367,33 @@ def import_fitness_drive(config: Config) -> dict[str, object]:
                             _fitness_metric_payload(record, metric),
                         )
                     )
+            for event in ema_events:
+                if not isinstance(event, dict):
+                    raise ValueError(f"Invalid EMA event in {path.name}")
+                event_id = event.get("id")
+                scheduled_at = event.get("scheduledAt")
+                status = event.get("status")
+                if not event_id or not scheduled_at or status not in {
+                    "pending", "answered", "dismissed", "expired"
+                }:
+                    raise ValueError(f"Invalid EMA event in {path.name}")
+                answered_at = event.get("answeredAt")
+                staged_ema_rows.append(
+                    (
+                        str(event_id),
+                        _as_utc_iso(scheduled_at, config.timezone),
+                        _as_utc_iso(answered_at, config.timezone) if answered_at else None,
+                        status,
+                    )
+                )
         staged[path.resolve()] = staged_rows
+        staged_ema[path.resolve()] = staged_ema_rows
 
     files = metrics = 0
     with connect(config.database) as conn:
         if rebuild:
             conn.execute("DELETE FROM metric_events WHERE source = 'fitness_drive'")
+            conn.execute("DELETE FROM ema_events")
         ordered_staged = sorted(
             staged.items(), key=lambda item: file_ranks[item[0]], reverse=True
         )
@@ -382,6 +417,15 @@ def import_fitness_drive(config: Config) -> dict[str, object]:
                     origin_file=str(path),
                 ):
                     metrics += 1
+            if not rebuild:
+                conn.execute("DELETE FROM ema_events WHERE origin_file = ?", (str(path),))
+            for event_id, scheduled_at, answered_at, status in staged_ema[path]:
+                conn.execute(
+                    """INSERT OR IGNORE INTO ema_events
+                    (event_id, scheduled_at, answered_at, status, origin_file)
+                    VALUES (?, ?, ?, ?, ?)""",
+                    (event_id, scheduled_at, answered_at, status, str(path)),
+                )
             file_meta = manifest.get(path.name, {})
             conn.execute(
                 """

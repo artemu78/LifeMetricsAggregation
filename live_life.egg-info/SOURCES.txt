@@ -8,12 +8,16 @@ live_life/collectors.py
 live_life/config.py
 live_life/dashboard_data.py
 live_life/dashboard_json.py
+live_life/dashboard_launcher.py
 live_life/data_sync_json.py
 live_life/db.py
 live_life/diary_drive.py
+live_life/drive_connection.py
+live_life/drive_recovery.py
 live_life/export.py
 live_life/fitness_drive.py
 live_life/fitness_sync_json.py
+live_life/freshness.py
 live_life/importers.py
 live_life/report.py
 live_life/server.py
@@ -30,5 +34,6 @@ tests/test_config.py
 tests/test_dashboard.py
 tests/test_data_sync.py
 tests/test_diary_drive.py
+tests/test_drive_recovery.py
 tests/test_pipeline.py
 tests/test_rescuetime.py

@@ -64,7 +64,8 @@ class MetricPoint(BaseModel):
     )
     timestamp: AwareDatetime
     metric: str
-    value: float
+    value: float | None = None
+    valueText: str | None = None
     unit: str | None = None
 
 
@@ -74,6 +75,21 @@ class TaskItem(BaseModel):
     )
     content: str
     timestamp: AwareDatetime
+
+
+class EmaStatus(StrEnum):
+    pending = 'pending'
+    answered = 'answered'
+    dismissed = 'dismissed'
+    expired = 'expired'
+
+
+class EmaEventItem(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    timestamp: AwareDatetime
+    status: EmaStatus
 
 
 class Perspective(StrEnum):
@@ -105,6 +121,7 @@ class TodoistSummary(BaseModel):
     )
     created: conint(ge=0)
     completed: conint(ge=0)
+    deleted: conint(ge=0)
 
 
 class SourceIndicator(BaseModel):
@@ -123,6 +140,8 @@ class DayDetail(BaseModel):
     welltoryMetrics: list[MetricPoint]
     createdTasks: list[TaskItem]
     completedTasks: list[TaskItem]
+    deletedTasks: list[TaskItem]
+    emaEvents: list[EmaEventItem]
     rescueTime: list[RescueTimeItem]
 
 

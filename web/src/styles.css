@@ -935,6 +935,93 @@ h1 {
 .drive-client-upload input { max-width: 100%; }
 
 .drive-recovery details + details { margin-top: .8rem; }
+.timeline-link { display: inline-flex; align-items: center; gap: 6px; margin: 0 0 18px; color: #245c4b; font-weight: 700; text-decoration: none; }
+.timeline-link:hover { text-decoration: underline; }
+.timeline-link svg { width: 18px; height: 18px; }
+.timeline-modal { max-width: 100vw; }
+.day-detail-modal, .timeline-modal { width: 100vw; max-width: 100vw; height: 100vh; height: 100dvh; max-height: 100dvh; border-radius: 0; }
+.timeline-title { display: flex; align-items: baseline; flex-wrap: wrap; gap: 10px; }
+.timeline-title time { color: #61776d; font-size: .78em; font-weight: 600; }
+.day-chart-card { padding: 18px 20px 10px; border: 1px solid #d6e2dc; border-radius: 18px; background: #fff; }
+.day-chart-heading { display: flex; align-items: start; justify-content: space-between; gap: 14px; margin-bottom: 8px; }
+.day-chart-heading h3 { margin: 0 0 4px; font-size: 1.1rem; }
+.day-chart-heading p { margin: 0; color: #6d827b; font-size: .82rem; }
+.day-chart-scroll { overflow-x: auto; overscroll-behavior-inline: contain; }
+.day-chart { display: block; width: max(100%, 900px); height: auto; min-height: 420px; }
+.chart-axis-sticky { position: fixed; right: calc(clamp(20px, 3vw, 42px) + 22px); bottom: 0; left: calc(clamp(20px, 3vw, 42px) + 22px); z-index: 21; height: 50px; overflow: hidden; border-top: 1px solid #aebeb6; background: rgba(255, 255, 255, .96); box-shadow: 0 -3px 10px #19312a12; }
+.chart-axis-sticky svg { display: block; width: max(100%, 900px); height: 50px; }
+.chart-gridline { stroke: #e4ebe7; stroke-width: 1; }
+.chart-time-gridline { stroke: #edf1ef; stroke-width: 1; stroke-dasharray: 3 5; }
+.chart-day-boundary { stroke: #9aaea5; stroke-width: 1.5; stroke-dasharray: 4 4; }
+.chart-sleep-boundary line { stroke: #7779b9; stroke-width: 1.5; stroke-dasharray: 4 4; }
+.chart-sleep-boundary line { transition: stroke-width 120ms ease; }
+.chart-sleep-boundary:hover line { stroke-width: 3; }
+.chart-sleep-boundary text { fill: #6769a5; font-size: 10px; font-weight: 800; letter-spacing: .04em; }
+.chart-axis { stroke: #aebeb6; stroke-width: 1.2; }
+.chart-lane-label { fill: #61776d; font-size: 11px; font-weight: 800; letter-spacing: .08em; }
+.chart-welltory-sub-label { fill: #628276; font-size: 9px; font-weight: 650; }
+.chart-tick { fill: #667c73; font-size: 12px; font-variant-numeric: tabular-nums; }
+.chart-inline-label { fill: #62786f; font-size: 10px; }
+.heart-rate-path { fill: none; stroke: #cf5c4f; stroke-width: 2.35; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.chart-step-bar { fill: #33836b; opacity: .78; transition: opacity 120ms ease, filter 120ms ease; }
+.chart-step-bar:hover { opacity: 1; filter: brightness(.88) drop-shadow(0 1px 2px #19312a66); }
+.chart-step-hit-area { fill: transparent; cursor: default; }
+.chart-step-hit-area:hover + .chart-step-bar { opacity: 1; filter: brightness(.88) drop-shadow(0 1px 2px #19312a66); }
+.heart-rate-hit-area { fill: transparent; pointer-events: all; cursor: crosshair; }
+.heart-rate-path { transition: stroke-width 120ms ease, filter 120ms ease; }
+.heart-rate-series:hover .heart-rate-path { stroke-width: 3.4; filter: drop-shadow(0 1px 2px #a4484266); }
+.heart-hover-popup line { stroke: #a44842; stroke-width: 1; stroke-dasharray: 3 3; opacity: .65; }
+.heart-hover-popup circle { fill: #cf5c4f; stroke: white; stroke-width: 2; }
+.heart-hover-popup rect { fill: #263d35; stroke: white; stroke-width: 1; filter: drop-shadow(0 2px 5px #0003); }
+.heart-hover-popup text { fill: white; font-size: 11px; font-weight: 600; }
+.heart-hover-popup .heart-hover-value { font-size: 12px; font-weight: 800; }
+.chart-duration-segment { cursor: pointer; opacity: .88; transition: opacity 120ms ease, filter 120ms ease; }
+.chart-duration-segment:hover { opacity: 1; filter: brightness(.9); }
+.chart-event-dot { stroke: white; stroke-width: 1.5; cursor: pointer; vector-effect: non-scaling-stroke; }
+.chart-event-dot:hover { stroke: #19312a; stroke-width: 2.5; }
+.todoist-marker { position: relative; display: grid; width: 38px; height: 38px; place-items: center; padding: 0; border: 0; border-radius: 10px; background: transparent; cursor: pointer; transition: transform 120ms ease, background-color 120ms ease, filter 120ms ease; }
+.todoist-marker:hover { transform: scale(1.1); background: #e8f0eb; filter: drop-shadow(0 2px 3px #19312a44); }
+.todoist-marker:focus-visible { outline: 2px solid #19312a; outline-offset: 1px; background: #e8f0eb; }
+.todoist-count-badge { position: absolute; top: 0; right: 0; display: grid; min-width: 16px; height: 16px; place-items: center; padding: 0 3px; border: 1px solid white; border-radius: 9px; color: white; font-size: 9px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
+.welltory-measurement { cursor: pointer; }
+.welltory-measurement .welltory-energy-outline, .welltory-measurement .welltory-stress-outline { transition: stroke-width 120ms ease, filter 120ms ease; }
+.welltory-measurement:hover .welltory-energy-outline, .welltory-measurement:hover .welltory-stress-outline { stroke-width: 2; filter: drop-shadow(0 1px 2px #19312a55); }
+.welltory-measurement:hover .welltory-value { font-size: 11px; }
+.welltory-hit-area { fill: transparent; pointer-events: all; }
+.welltory-centerline { stroke: #9aaea5; stroke-width: 1.2; }
+.welltory-energy-outline { fill: #f7fbf8; stroke: #438b72; stroke-width: 1; }
+.welltory-energy-fill { fill: #43a884; pointer-events: none; }
+.welltory-energy-terminal { fill: #438b72; pointer-events: none; }
+.welltory-stress-outline { fill: #fff9f5; stroke: #c66a48; stroke-width: 1; }
+.welltory-stress-fill { fill: #e47b4f; pointer-events: none; }
+.welltory-value { fill: #36574b; font-size: 9px; font-weight: 800; font-variant-numeric: tabular-nums; pointer-events: none; }
+.welltory-stress-value { fill: #9c583d; }
+.welltory-value.is-crowded { display: none; }
+.day-chart-selection { position: fixed; z-index: 22; width: max-content; max-width: min(360px, calc(100vw - 32px)); max-height: min(240px, calc(100vh - 32px)); overflow: auto; padding: 10px 12px; border: 1px solid #c7d7ce; border-radius: 10px; background: rgba(255, 255, 255, .97); box-shadow: 0 5px 18px #19312a33; color: #263d35; font-size: .86rem; line-height: 1.4; white-space: pre-line; overflow-wrap: anywhere; pointer-events: none; }
+.day-chart-selection time { font-weight: 800; font-variant-numeric: tabular-nums; }
+@media (prefers-reduced-motion: reduce) { .chart-duration-segment, .chart-step-bar, .heart-rate-path, .todoist-marker, .welltory-measurement .welltory-energy-outline, .welltory-measurement .welltory-stress-outline { transition: none; } }
+.timeline-legend { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0; }
+.timeline-legend span { padding: 6px 10px; border-radius: 999px; background: #edf3ef; color: #55766b; font-size: .78rem; font-weight: 700; }
+.timeline-legend .todo-created { background: #e7f2eb; color: #28704b; }
+.timeline-legend .todo-completed { background: #e8effb; color: #3768a7; }
+.timeline-legend .todo-deleted { background: #f3e9e7; color: #875e57; }
+.timeline-list { list-style: none; position: relative; padding: 0; margin: 0; }
+.timeline-list::before { content: ""; position: absolute; left: 98px; top: 8px; bottom: 8px; width: 2px; background: #dce6e1; }
+.timeline-event { display: grid; grid-template-columns: 76px 18px minmax(0, 1fr); gap: 12px; align-items: start; position: relative; padding: 10px 0; }
+.timeline-event time { text-align: right; color: #55766b; font-variant-numeric: tabular-nums; }
+.timeline-marker { width: 12px; height: 12px; margin: 4px auto 0; border: 2px solid white; border-radius: 50%; background: #789087; box-shadow: 0 0 0 1px #b9ccc2; z-index: 1; }
+.timeline-event div { min-width: 0; }
+.timeline-event strong { display: block; text-transform: capitalize; }
+.timeline-event p { margin: 3px 0 0; color: #6d827b; overflow-wrap: anywhere; }
+.event-heart .timeline-marker { background: #cf5c4f; }
+.event-sleep .timeline-marker { background: #7076ad; }
+.event-exercise .timeline-marker { background: #4c7f6d; }
+.event-todo-created .timeline-marker { background: #3c9563; }
+.event-todo-completed .timeline-marker { background: #4d82d8; }
+.event-todo-deleted .timeline-marker { background: #bd514b; }
+.event-welltory .timeline-marker { background: #bd7198; }
+.event-rescuetime .timeline-marker { background: #d7a742; }
+@media (max-width: 560px) { .timeline-list::before { left: 76px; } .timeline-event { grid-template-columns: 56px 18px minmax(0, 1fr); gap: 10px; font-size: .88rem; } }
 .drive-recovery .button { display: inline-flex; align-items: center; justify-content: center; min-height: 40px; padding: 9px 14px; border: 1px solid #b8ccc1; border-radius: 10px; background: #e6f0e9; color: #244b3c; font: inherit; font-size: .88rem; font-weight: 600; text-decoration: none; cursor: pointer; }
 .drive-recovery .button:hover:not(:disabled) { background: #d6e8dc; }
 .drive-recovery .button:disabled { opacity: .55; cursor: wait; }

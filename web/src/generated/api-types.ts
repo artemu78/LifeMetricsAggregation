@@ -114,13 +114,20 @@ export interface components {
             /** Format: date-time */
             timestamp: string;
             metric: string;
-            value: number;
+            value: number | null;
+            valueText?: string | null;
             unit?: string | null;
         };
         TaskItem: {
             content: string;
             /** Format: date-time */
             timestamp: string;
+        };
+        EmaEventItem: {
+            /** Format: date-time */
+            timestamp: string;
+            /** @enum {string} */
+            status: "pending" | "answered" | "dismissed" | "expired";
         };
         RescueTimeItem: {
             /** Format: date-time */
@@ -137,6 +144,7 @@ export interface components {
         TodoistSummary: {
             created: number;
             completed: number;
+            deleted: number;
         };
         SourceIndicator: {
             available: boolean;
@@ -147,6 +155,8 @@ export interface components {
             welltoryMetrics: components["schemas"]["MetricPoint"][];
             createdTasks: components["schemas"]["TaskItem"][];
             completedTasks: components["schemas"]["TaskItem"][];
+            deletedTasks: components["schemas"]["TaskItem"][];
+            emaEvents: components["schemas"]["EmaEventItem"][];
             rescueTime: components["schemas"]["RescueTimeItem"][];
         };
         DashboardDay: {

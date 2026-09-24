@@ -43,6 +43,8 @@ def get_source_latest(conn, timezone_name: str, source: str) -> str | None:
                 SELECT completed_at AS recorded_at FROM completed_tasks WHERE source = 'todoist'
                 UNION ALL
                 SELECT created_at AS recorded_at FROM created_tasks WHERE source = 'todoist'
+                UNION ALL
+                SELECT deleted_at AS recorded_at FROM deleted_tasks WHERE source = 'todoist'
             )
             """
         ).fetchone()
@@ -86,6 +88,8 @@ def data_freshness(config: Config, now: datetime | None = None) -> dict[str, obj
                 SELECT completed_at AS recorded_at FROM completed_tasks WHERE source = 'todoist'
                 UNION ALL
                 SELECT created_at AS recorded_at FROM created_tasks WHERE source = 'todoist'
+                UNION ALL
+                SELECT deleted_at AS recorded_at FROM deleted_tasks WHERE source = 'todoist'
             )
             """
         ).fetchone()["latest"]

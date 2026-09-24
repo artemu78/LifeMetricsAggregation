@@ -24,6 +24,15 @@ CREATE TABLE IF NOT EXISTS metric_events (
 CREATE INDEX IF NOT EXISTS idx_metric_time ON metric_events(occurred_at);
 CREATE INDEX IF NOT EXISTS idx_metric_name ON metric_events(metric);
 
+CREATE TABLE IF NOT EXISTS ema_events (
+    event_id TEXT PRIMARY KEY,
+    scheduled_at TEXT NOT NULL,
+    answered_at TEXT,
+    status TEXT NOT NULL,
+    origin_file TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_ema_scheduled_at ON ema_events(scheduled_at);
+
 CREATE TABLE IF NOT EXISTS completed_tasks (
     source TEXT NOT NULL,
     external_id TEXT NOT NULL,
@@ -47,6 +56,18 @@ CREATE TABLE IF NOT EXISTS created_tasks (
     PRIMARY KEY(source, external_id)
 );
 CREATE INDEX IF NOT EXISTS idx_created_task_time ON created_tasks(created_at);
+
+CREATE TABLE IF NOT EXISTS deleted_tasks (
+    source TEXT NOT NULL,
+    external_id TEXT NOT NULL,
+    content TEXT NOT NULL,
+    project_id TEXT,
+    deleted_at TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    imported_at TEXT NOT NULL,
+    PRIMARY KEY(source, external_id, deleted_at)
+);
+CREATE INDEX IF NOT EXISTS idx_deleted_task_time ON deleted_tasks(deleted_at);
 
 CREATE TABLE IF NOT EXISTS journal_entries (
     logical_date TEXT PRIMARY KEY,

@@ -105,7 +105,11 @@ def _sync_collector(config, source: str, collector, start: date, end: date, star
             if source == "rescuetime":
                 records += int(result.get("events", 0))
             else:
-                records += int(result.get("created", 0)) + int(result.get("completed", 0))
+                records += (
+                    int(result.get("created", 0))
+                    + int(result.get("completed", 0))
+                    + int(result.get("deleted", 0))
+                )
             details = result
         except Exception as exc:
             status = "failed"

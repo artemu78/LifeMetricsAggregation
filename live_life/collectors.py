@@ -165,15 +165,15 @@ def collect_rescuetime(config: Config, day: date) -> dict[str, int]:
 
 
 def collect_todoist(config: Config, day: date) -> dict[str, int]:
-    """Store task completions and creation times, or report a missing API token."""
+    """Store task creation, completion, and deletion events for one logical day."""
     token = os.environ.get(config.todoist_token_env, "").strip()
     if not token:
-        return {"completed": 0, "created": 0, "skipped_no_token": 1}
+        return {"completed": 0, "created": 0, "deleted": 0, "skipped_no_token": 1}
     start, end = logical_window(day, config)
     since = start.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
     until = end.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
     cursor = None
-    completed = created = 0
+    completed = created = deleted = 0
     with connect(config.database) as conn:
         while True:
             params = {"since": since, "until": until, "limit": 200}
@@ -232,6 +232,71 @@ def collect_todoist(config: Config, day: date) -> dict[str, int]:
             cursor = payload.get("next_cursor")
             if not cursor:
                 break
+        # Activity logs retain deleted task details that are absent from the active
+        # task list and completion history. Fetch only this logical day's deletions.
+        cursor = None
+        while True:
+            params = {
+                "date_from": since,
+                "date_to": until,
+                "limit": 200,
+                "object_event_types": json.dumps(["item:added", "item:deleted"]),
+            }
+            if cursor:
+                params["cursor"] = cursor
+            payload = _get_json(
+                f"{config.todoist_api_base_url}/activities?" + urlencode(params), token
+            )
+            for event in payload.get("results", []):
+                deleted_at = event.get("event_date") or event.get("date") or event.get("timestamp")
+                if not deleted_at:
+                    continue
+                deleted_time = datetime.fromisoformat(
+                    deleted_at.replace("Z", "+00:00")
+                ).astimezone(timezone.utc)
+                if not (start.astimezone(timezone.utc) <= deleted_time < end.astimezone(timezone.utc)):
+                    continue
+                extra = event.get("extra_data") or {}
+                obj = event.get("object") or {}
+                content = (
+                    obj.get("content") or extra.get("content") or
+                    extra.get("item_content") or event.get("object_name") or ""
+                )
+                task_id = event.get("object_id") or obj.get("id") or extra.get("item_id")
+                if not task_id:
+                    continue
+                event_type = str(event.get("event_type") or event.get("event") or "")
+                if "added" in event_type:
+                    result = conn.execute(
+                        """INSERT OR IGNORE INTO created_tasks
+                        (source, external_id, content, project_id, created_at, payload_json, imported_at)
+                        VALUES ('todoist', ?, ?, ?, ?, ?, ?)""",
+                        (
+                            str(task_id), content,
+                            event.get("parent_project_id") or obj.get("project_id"),
+                            deleted_time.isoformat(), json.dumps(event, ensure_ascii=False, sort_keys=True),
+                            utc_now(),
+                        ),
+                    )
+                    created += result.rowcount
+                    continue
+                if "deleted" not in event_type:
+                    continue
+                result = conn.execute(
+                    """INSERT OR IGNORE INTO deleted_tasks
+                    (source, external_id, content, project_id, deleted_at, payload_json, imported_at)
+                    VALUES ('todoist', ?, ?, ?, ?, ?, ?)""",
+                    (
+                        str(task_id), content,
+                        event.get("parent_project_id") or obj.get("project_id"),
+                        deleted_time.isoformat(), json.dumps(event, ensure_ascii=False, sort_keys=True),
+                        utc_now(),
+                    ),
+                )
+                deleted += result.rowcount
+            cursor = payload.get("next_cursor")
+            if not cursor:
+                break
         cursor = None
         while True:
             params = {"limit": 200}
@@ -261,4 +326,4 @@ def collect_todoist(config: Config, day: date) -> dict[str, int]:
             cursor = payload.get("next_cursor") if isinstance(payload, dict) else None
             if not cursor:
                 break
-    return {"completed": completed, "created": created, "skipped_no_token": 0}
+    return {"completed": completed, "created": created, "deleted": deleted, "skipped_no_token": 0}

@@ -103,13 +103,14 @@ export function buildRescueTimeOverview(records: RescueTimeRecord[]) {
 export type SourceIndicatorDay = {
   bracelet: { sleepSeconds: number | null; steps: number | null }
   welltory: { available: boolean }
-  todoist: { created: number; completed: number }
+  todoist: { created: number; completed: number; deleted: number }
   rescuetime: { available: boolean }
   detail?: {
     braceletMetrics?: unknown[]
     welltoryMetrics?: unknown[]
     createdTasks?: unknown[]
     completedTasks?: unknown[]
+    deletedTasks?: unknown[]
     rescueTime?: unknown[]
   }
 }
@@ -131,7 +132,8 @@ export function isSourceAvailable(
       return (
         day.todoist.created > 0 ||
         day.todoist.completed > 0 ||
-        Boolean(day.detail?.createdTasks?.length || day.detail?.completedTasks?.length)
+        day.todoist.deleted > 0 ||
+        Boolean(day.detail?.createdTasks?.length || day.detail?.completedTasks?.length || day.detail?.deletedTasks?.length)
       )
     case 'rescuetime':
       return Boolean(day.rescuetime.available || day.detail?.rescueTime?.length)

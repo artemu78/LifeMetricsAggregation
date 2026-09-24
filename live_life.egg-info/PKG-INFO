@@ -5,7 +5,7 @@ Summary: Local-first personal telemetry aggregation
 Requires-Python: >=3.11
 Requires-Dist: fastapi<1,>=0.116
 Requires-Dist: google-api-python-client>=2.0
-Requires-Dist: google-auth-oauthlib>=1.0
+Requires-Dist: google-auth-oauthlib>=1.4.1
 Requires-Dist: pydantic<3,>=2.11
 Requires-Dist: pyyaml<7,>=6
 Requires-Dist: uvicorn<1,>=0.35
