@@ -23,7 +23,7 @@ packages = ["live_life"]
 
 [project.scripts]
 live-life = "live_life.cli:main"
-live-life-dashboard = "live_life.server:main"
+live-life-dashboard = "live_life.dashboard_launcher:main"
 
 [tool.datamodel-codegen]
 input = "openapi.yaml"

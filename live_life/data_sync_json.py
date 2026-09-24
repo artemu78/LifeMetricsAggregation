@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 import json
+import logging
 import sys
+import traceback
+from urllib.error import HTTPError, URLError
 
 from .collectors import collect_rescuetime, collect_todoist
 from .config import load_config
@@ -12,6 +15,36 @@ from .drive_recovery import issue, report_failure, log_event, RECONNECT_STEPS
 from .freshness import display_timestamp, get_source_latest
 from .importers import import_fitness_drive, import_welltory
 from .sync_worker import InvalidDateRange, sync_worker
+
+LOGGER = logging.getLogger(__name__)
+
+
+def _log_source_failure(source: str, start: date, end: date, exc: Exception) -> None:
+    if isinstance(exc, HTTPError):
+        LOGGER.error(
+            "dashboard_source_sync_failed source=%s from=%s to=%s "
+            "error_type=%s http_status=%s http_reason=%s",
+            source,
+            start.isoformat(),
+            end.isoformat(),
+            type(exc).__name__,
+            exc.code,
+            exc.msg,
+        )
+        return
+
+    reason = getattr(exc, "reason", None) if isinstance(exc, URLError) else None
+    LOGGER.error(
+        "dashboard_source_sync_failed source=%s from=%s to=%s "
+        "error_type=%s%s",
+        source,
+        start.isoformat(),
+        end.isoformat(),
+        type(exc).__name__,
+        f" reason_type={type(reason).__name__}" if reason is not None else "",
+    )
+    if exc.__traceback__ is not None:
+        LOGGER.error("Failure location:\n%s", "".join(traceback.format_tb(exc.__traceback__)).rstrip())
 
 
 def _days(start: date, end: date):
@@ -57,6 +90,13 @@ def _sync_bracelet(config, start: date, end: date, started_at: str) -> dict:
             problem = (issue("GOOGLE_DRIVE_NOT_CONFIGURED", "Папка экспортов браслета не настроена.", "configure", ["Укажите GOOGLE_DRIVE_FOLDER_ID в .env: это идентификатор папки с экспортами Reva Health Exporter в Google Drive."])
                        if sync.get("skipped_not_configured") else issue("GOOGLE_RECONNECT_REQUIRED", "Подключите Google Drive.", "reconnect", RECONNECT_STEPS))
             details = {"unavailable": True, "issue": problem}
+            LOGGER.warning(
+                "dashboard_source_sync_incomplete source=bracelet status=not_run "
+                "from=%s to=%s reason=%s",
+                start.isoformat(),
+                end.isoformat(),
+                problem["code"],
+            )
         else:
             imported = import_fitness_drive(config)
             status = "partial" if sync.get("missing_files") else "success"
@@ -65,11 +105,20 @@ def _sync_bracelet(config, start: date, end: date, started_at: str) -> dict:
                 "changedFiles": int(sync.get("changed_files", 0)),
                 "missingFiles": int(sync.get("missing_files", 0)),
             }
+            if status == "partial":
+                LOGGER.warning(
+                    "dashboard_source_sync_incomplete source=bracelet status=partial "
+                    "from=%s to=%s missing_files=%s",
+                    start.isoformat(),
+                    end.isoformat(),
+                    details["missingFiles"],
+                )
     except Exception as exc:
         status = "failed"
         records = 0
         problem = report_failure(config, exc)
         details = {"errorType": type(exc).__name__, "issue": problem}
+        _log_source_failure("bracelet", start, end, exc)
     for day in _days(start, end):
         _record(config, "bracelet", day, status, started_at, details)
     log_event(config, "finished", stage="sync", status=status, records=records)
@@ -83,11 +132,18 @@ def _sync_welltory(config, start: date, end: date, started_at: str) -> dict:
         status = "success" if paths else "not_run"
         records = int(result.get("metrics", 0))
         details = {"filesAvailable": len(paths)}
+        if status == "not_run":
+            LOGGER.warning(
+                "dashboard_source_sync_incomplete source=welltory status=not_run "
+                "from=%s to=%s reason=no_matching_files",
+                start.isoformat(),
+                end.isoformat(),
+            )
     except Exception as exc:
         status = "failed"
         records = 0
         details = {"errorType": type(exc).__name__}
-        print(f"{type(exc).__name__}: Welltory import failed", file=sys.stderr)
+        _log_source_failure("welltory", start, end, exc)
     for day in _days(start, end):
         _record(config, "welltory", day, status, started_at, details)
     return {"source": "welltory", "status": status, "records": records}
@@ -96,24 +152,46 @@ def _sync_welltory(config, start: date, end: date, started_at: str) -> dict:
 def _sync_collector(config, source: str, collector, start: date, end: date, started_at: str) -> dict:
     statuses = []
     records = 0
+    skip_reasons: set[str] = set()
     for day in _days(start, end):
         try:
             result = collector(config, day)
             status = "not_run" if any(
                 value for key, value in result.items() if key.startswith("skipped_")
             ) else "success"
+            skip_reasons.update(
+                key for key, value in result.items()
+                if key.startswith("skipped_") and value
+            )
             if source == "rescuetime":
                 records += int(result.get("events", 0))
             else:
-                records += int(result.get("created", 0)) + int(result.get("completed", 0))
+                records += (
+                    int(result.get("created", 0))
+                    + int(result.get("completed", 0))
+                    + int(result.get("deleted", 0))
+                )
             details = result
         except Exception as exc:
             status = "failed"
             details = {"errorType": type(exc).__name__}
-            print(f"{type(exc).__name__}: {source} collection failed for {day}", file=sys.stderr)
+            _log_source_failure(source, day, day, exc)
         statuses.append(status)
         _record(config, source, day, status, started_at, details)
-    return {"source": source, "status": _summary_status(statuses), "records": records}
+    summary_status = _summary_status(statuses)
+    if summary_status != "success":
+        LOGGER.warning(
+            "dashboard_source_sync_incomplete source=%s status=%s from=%s to=%s "
+            "records=%s skip_reasons=%s day_statuses=%s",
+            source,
+            summary_status,
+            start.isoformat(),
+            end.isoformat(),
+            records,
+            ",".join(sorted(skip_reasons)) or "none",
+            ",".join(statuses),
+        )
+    return {"source": source, "status": summary_status, "records": records}
 
 
 def main(argv: list[str] | None = None) -> int:

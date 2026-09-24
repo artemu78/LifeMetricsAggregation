@@ -179,7 +179,9 @@ components:
         metric:
           type: string
         value:
-          type: number
+          type: [number, 'null']
+        valueText:
+          type: [string, 'null']
         unit:
           type: [string, 'null']
     TaskItem:
@@ -192,6 +194,17 @@ components:
         timestamp:
           type: string
           format: date-time
+    EmaEventItem:
+      type: object
+      additionalProperties: false
+      required: [timestamp, status]
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [pending, answered, dismissed, expired]
     RescueTimeItem:
       type: object
       additionalProperties: false
@@ -220,12 +233,15 @@ components:
     TodoistSummary:
       type: object
       additionalProperties: false
-      required: [created, completed]
+      required: [created, completed, deleted]
       properties:
         created:
           type: integer
           minimum: 0
         completed:
+          type: integer
+          minimum: 0
+        deleted:
           type: integer
           minimum: 0
     SourceIndicator:
@@ -241,7 +257,7 @@ components:
     DayDetail:
       type: object
       additionalProperties: false
-      required: [braceletMetrics, welltoryMetrics, createdTasks, completedTasks, rescueTime]
+      required: [braceletMetrics, welltoryMetrics, createdTasks, completedTasks, deletedTasks, emaEvents, rescueTime]
       properties:
         braceletMetrics:
           type: array
@@ -259,6 +275,14 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/TaskItem'
+        deletedTasks:
+          type: array
+          items:
+            $ref: '#/components/schemas/TaskItem'
+        emaEvents:
+          type: array
+          items:
+            $ref: '#/components/schemas/EmaEventItem'
         rescueTime:
           type: array
           items:

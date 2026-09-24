@@ -464,9 +464,14 @@ class PipelineTest(unittest.TestCase):
             ],
             "next_cursor": None,
         }
+        activities = {"results": [], "next_cursor": None}
         active = {"results": [], "next_cursor": None}
+        active_fallback = {"results": [], "next_cursor": None}
         with patch.dict(os.environ, {"TEST_TODOIST_TOKEN": "test-token"}):
-            with patch("live_life.collectors._get_json", side_effect=[completed, active]):
+            with patch(
+                "live_life.collectors._get_json",
+                side_effect=[completed, activities, active, active_fallback],
+            ):
                 result = collect_todoist(self.config, date(2026, 8, 10))
 
         self.assertEqual(result["completed"], 1)
@@ -530,6 +535,46 @@ class PipelineTest(unittest.TestCase):
         with connect(self.config.database) as conn:
             count = conn.execute("SELECT COUNT(*) FROM metric_events").fetchone()[0]
         self.assertEqual(count, 6)
+
+    def test_fitness_import_deduplicates_overlapping_heart_rate_batches(self):
+        """Overlapping sample batches keep one latest observation with a compact payload."""
+        cache = self.config.root / "data/inbox/fitness_drive"
+        cache.mkdir(parents=True)
+        config = replace(self.config, fitness_drive_cache=cache)
+
+        def write_batch(name: str, end: str, values: tuple[int, int], modified: int) -> Path:
+            path = cache / name
+            record = {
+                "recordType": "heart_rate",
+                "origin": "com.example.band",
+                "startTime": "2026-07-17T07:00:00Z",
+                "endTime": end,
+                "samples": [
+                    {"time": "2026-07-17T07:00:00Z", "beatsPerMinute": values[0]},
+                    {"time": "2026-07-17T07:01:00Z", "beatsPerMinute": values[1]},
+                ],
+            }
+            path.write_text(
+                json.dumps({"header": {"schemaVersion": 1, "recordCount": 1}, "records": [record]}),
+                encoding="utf-8",
+            )
+            os.utime(path, (modified, modified))
+            return path
+
+        write_batch("older.json", "2026-07-17T07:02:00Z", (60, 61), 1_000_000_000)
+        latest_path = write_batch("newer.json", "2026-07-17T07:03:00Z", (62, 63), 1_000_000_100)
+
+        result = import_fitness_drive(config)
+
+        self.assertEqual(result["metrics"], 2)
+        with connect(config.database) as conn:
+            rows = conn.execute(
+                "SELECT value_num, origin_file, length(payload_json) AS payload_bytes "
+                "FROM metric_events WHERE source = 'fitness_drive' LIMIT 3"
+            ).fetchall()
+        self.assertEqual(sorted(row["value_num"] for row in rows), [62.0, 63.0])
+        self.assertEqual({row["origin_file"] for row in rows}, {str(latest_path.resolve())})
+        self.assertLess(max(row["payload_bytes"] for row in rows), 120)
 
     def test_report_keeps_diary_content_private(self):
         """Verify report keeps diary content private."""

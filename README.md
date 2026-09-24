@@ -149,13 +149,18 @@ It reads Bracelet, Welltory, Todoist, and RescueTime data from the local
 database. Diary content is never selected by the dashboard API. The server
 binds only to `127.0.0.1`.
 
-Build and start it:
+Install the frontend dependencies once, and run the dashboard from the project
+virtual environment. `live-life-dashboard` rebuilds the frontend and starts the
+server:
 
 ```bash
 source .venv/bin/activate
-cd web && npm install && npm run build && cd ..
+cd web && npm install && cd ..
 live-life-dashboard
 ```
+
+After setup, run `live-life-dashboard` whenever you want to start the dashboard;
+it runs `npm run build` automatically before starting the server.
 
 Open `http://127.0.0.1:8000`. The **Update data** action synchronizes Bracelet
 exports from Google Drive, imports available Welltory CSV files, and collects

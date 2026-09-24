@@ -142,6 +142,18 @@ def _fitness_documents(path: Path) -> list[dict]:
     return [document]
 
 
+def _fitness_batch(document: dict) -> tuple[dict, list[dict], list[dict]]:
+    """Return the health records and EMA events from legacy or combined exports."""
+    batch = document.get("healthConnectBatch", document)
+    if not isinstance(batch, dict):
+        raise ValueError("Fitness export healthConnectBatch must be an object")
+    records = batch.get("records", [])
+    ema_events = document.get("emaEvents", [])
+    if not isinstance(records, list) or not isinstance(ema_events, list):
+        raise ValueError("Fitness export records and emaEvents must be arrays")
+    return batch, records, ema_events
+
+
 def _duration_seconds(start: str, end: str) -> float:
     """Return the signed elapsed seconds between two ISO timestamps."""
     start_time = datetime.fromisoformat(start.replace("Z", "+00:00"))
@@ -188,6 +200,17 @@ def _fitness_metrics(record: dict) -> list[tuple[str, str, float, str]]:
     return []
 
 
+def _fitness_metric_payload(record: dict, metric: str) -> dict:
+    """Store interpretation context while keeping full source data in cached files."""
+    payload = {
+        "recordType": record.get("recordType"),
+        "origin": record.get("origin", ""),
+    }
+    if metric == "fitness_drive.steps" or metric.startswith("fitness_drive.sleep."):
+        payload.update(startTime=record.get("startTime"), endTime=record.get("endTime"))
+    return payload
+
+
 def _fitness_manifest(config: Config) -> dict[str, dict]:
     """Return Drive metadata keyed by local cache filename."""
     if not config.fitness_drive_cache:
@@ -230,6 +253,40 @@ def import_fitness_drive(config: Config) -> dict[str, object]:
             WHERE source = 'fitness_drive' AND origin_file IS NULL
             """
         ).fetchone()["count"]
+        legacy_heart_rate_ids = conn.execute(
+            """
+            SELECT COUNT(*) AS count FROM metric_events
+            WHERE source = 'fitness_drive'
+              AND metric = 'fitness_drive.heart_rate'
+              AND external_id LIKE 'heart_rate:%:%'
+            LIMIT 1
+            """
+        ).fetchone()["count"]
+        full_record_payloads = conn.execute(
+            """
+            SELECT COUNT(*) AS count FROM metric_events
+            WHERE source = 'fitness_drive'
+              AND CASE WHEN json_valid(payload_json) THEN (
+                    (metric = 'fitness_drive.heart_rate'
+                     AND json_type(payload_json, '$.samples') = 'array')
+                 OR (metric = 'fitness_drive.steps'
+                     AND json_type(payload_json, '$.count') IS NOT NULL)
+                 OR (metric LIKE 'fitness_drive.sleep.%_seconds'
+                     AND json_type(payload_json, '$.stages') = 'array')
+                 OR (metric = 'fitness_drive.distance'
+                     AND json_type(payload_json, '$.distanceMeters') IS NOT NULL)
+                 OR (metric = 'fitness_drive.total_calories'
+                     AND json_type(payload_json, '$.energyKilocalories') IS NOT NULL)
+                 OR (metric = 'fitness_drive.exercise'
+                     AND json_type(payload_json, '$.endTime') IS NOT NULL)
+                 OR (metric = 'fitness_drive.resting_heart_rate'
+                     AND json_type(payload_json, '$.beatsPerMinute') IS NOT NULL)
+                 OR (metric = 'fitness_drive.oxygen_saturation'
+                     AND json_type(payload_json, '$.percentage') IS NOT NULL)
+              ) ELSE 1 END
+            LIMIT 1
+            """
+        ).fetchone()["count"]
 
     changed_paths = paths if legacy_rows > 0 else [
         path for path in paths
@@ -239,25 +296,38 @@ def import_fitness_drive(config: Config) -> dict[str, object]:
     # database stores only one origin_file. Reconcile every cached export when
     # anything changes so deleting the row owned by one file cannot hide an
     # identical row still supplied by an unchanged file.
-    rebuild = legacy_rows > 0 or bool(changed_paths)
+    rebuild = (
+        legacy_rows > 0
+        or legacy_heart_rate_ids > 0
+        or full_record_payloads > 0
+        or bool(changed_paths)
+    )
     selected = paths if rebuild else []
 
     staged: dict[Path, list[tuple[str, str, str, float, str, dict]]] = {}
+    staged_ema: dict[Path, list[tuple[str, str, str | None, str]]] = {}
+    file_ranks: dict[Path, tuple[str, int, str]] = {}
     records = 0
     affected_dates: set[str] = set()
     local_tz = ZoneInfo(config.timezone)
     for path in selected:
         staged_rows: list[tuple[str, str, str, float, str, dict]] = []
         file_meta = manifest.get(path.name, {})
+        file_ranks[path.resolve()] = (
+            str(file_meta.get("modifiedTime") or file_meta.get("remote_modified_at") or ""),
+            path.stat().st_mtime_ns,
+            path.name,
+        )
         remote_id = file_meta.get("remote_id") or path.name.split("--", 1)[0]
+        staged_ema_rows: list[tuple[str, str, str | None, str]] = []
         for document in _fitness_documents(path):
-            header = document.get("header", {})
+            batch, document_records, ema_events = _fitness_batch(document)
+            header = batch.get("header", {})
             if header.get("schemaVersion") != 1:
                 raise ValueError(
                     f"Unsupported fitness schema in {path.name}: {header.get('schemaVersion')}"
                 )
-            document_records = document.get("records", [])
-            if header.get("recordCount") != len(document_records):
+            if header.get("recordCount") is not None and header["recordCount"] != len(document_records):
                 raise ValueError(f"Fitness record count mismatch: {path.name}")
             for record in document_records:
                 records += 1
@@ -273,22 +343,67 @@ def import_fitness_drive(config: Config) -> dict[str, object]:
                         - timedelta(hours=config.day_boundary_hour)
                     ).date().isoformat()
                     affected_dates.add(logical_date)
+                    if record.get("recordType") == "heart_rate":
+                        # Exports batch samples into records of varying sizes. Hashing
+                        # the full batch gave the same sample a new identity whenever
+                        # an overlapping export split that batch differently.
+                        sample_identity = json.dumps(
+                            [record.get("origin", ""), normalized, metric],
+                            ensure_ascii=False,
+                            separators=(",", ":"),
+                        )
+                        external_id = "heart_rate:" + sha256(
+                            sample_identity.encode("utf-8")
+                        ).hexdigest()
+                    else:
+                        external_id = f"{record.get('recordType', 'fitness')}:{record_id}:{index}"
                     staged_rows.append(
-                        (f"{record.get('recordType', 'fitness')}:{record_id}:{index}", normalized, metric, value, unit, record)
+                        (
+                            external_id,
+                            normalized,
+                            metric,
+                            value,
+                            unit,
+                            _fitness_metric_payload(record, metric),
+                        )
                     )
+            for event in ema_events:
+                if not isinstance(event, dict):
+                    raise ValueError(f"Invalid EMA event in {path.name}")
+                event_id = event.get("id")
+                scheduled_at = event.get("scheduledAt")
+                status = event.get("status")
+                if not event_id or not scheduled_at or status not in {
+                    "pending", "answered", "dismissed", "expired"
+                }:
+                    raise ValueError(f"Invalid EMA event in {path.name}")
+                answered_at = event.get("answeredAt")
+                staged_ema_rows.append(
+                    (
+                        str(event_id),
+                        _as_utc_iso(scheduled_at, config.timezone),
+                        _as_utc_iso(answered_at, config.timezone) if answered_at else None,
+                        status,
+                    )
+                )
         staged[path.resolve()] = staged_rows
+        staged_ema[path.resolve()] = staged_ema_rows
 
     files = metrics = 0
     with connect(config.database) as conn:
         if rebuild:
             conn.execute("DELETE FROM metric_events WHERE source = 'fitness_drive'")
-        for path, rows in staged.items():
+            conn.execute("DELETE FROM ema_events")
+        ordered_staged = sorted(
+            staged.items(), key=lambda item: file_ranks[item[0]], reverse=True
+        )
+        for path, rows in ordered_staged:
             if not rebuild:
                 conn.execute(
                     "DELETE FROM metric_events WHERE source = 'fitness_drive' AND origin_file = ?",
                     (str(path),),
                 )
-            for external_id, occurred_at, metric, value, unit, record in rows:
+            for external_id, occurred_at, metric, value, unit, payload in rows:
                 if insert_metric(
                     conn,
                     source="fitness_drive",
@@ -298,10 +413,19 @@ def import_fitness_drive(config: Config) -> dict[str, object]:
                     value_num=value,
                     value_text=None,
                     unit=unit,
-                    payload=record,
+                    payload=payload,
                     origin_file=str(path),
                 ):
                     metrics += 1
+            if not rebuild:
+                conn.execute("DELETE FROM ema_events WHERE origin_file = ?", (str(path),))
+            for event_id, scheduled_at, answered_at, status in staged_ema[path]:
+                conn.execute(
+                    """INSERT OR IGNORE INTO ema_events
+                    (event_id, scheduled_at, answered_at, status, origin_file)
+                    VALUES (?, ?, ?, ?, ?)""",
+                    (event_id, scheduled_at, answered_at, status, str(path)),
+                )
             file_meta = manifest.get(path.name, {})
             conn.execute(
                 """

@@ -47,6 +47,7 @@ import {
   productivityIndexColor,
 } from "./dayDetail";
 import { inclusiveDateCount } from "./dashboardWindow";
+import { DayTimelineChart } from "./DayTimelineChart";
 import {
   dashboardStore as store,
   type DashboardDay,
@@ -266,14 +267,14 @@ function CalendarCell({ day }: { day: DashboardDay }) {
           <span className="numbers-label">
             <ListTodo aria-hidden="true" width={24} height={24} />
             Задачи <br />
-            (созд. / закр.)
+            (созд. / закр. / удал.)
           </span>
         </div>
         <div
-          title={`Создано: ${day.todoist.created}, Завершено: ${day.todoist.completed}`}
+          title={`Создано: ${day.todoist.created}, Закрыто: ${day.todoist.completed}, Удалено: ${day.todoist.deleted}`}
         >
           <b>
-            {day.todoist.created} / {day.todoist.completed}
+            {day.todoist.created} / {day.todoist.completed} / {day.todoist.deleted}
           </b>
         </div>
         {rescueOverview.totalTrackedSeconds > 0 && (
@@ -356,14 +357,14 @@ function MetricChart({
   timezone: DashboardResponse["timezone"];
 }) {
   const data = day.detail.braceletMetrics
-    .filter((point) => point.metric === metric)
+    .filter((point) => point.metric === metric && point.value != null)
     .map((point) => ({
       time: new Date(point.timestamp).toLocaleTimeString("ru-RU", {
         hour: "2-digit",
         minute: "2-digit",
         timeZone: timezone,
       }),
-      value: point.value,
+      value: point.value!,
     }));
   if (!data.length) return null;
   return (
@@ -492,7 +493,7 @@ function DayModal({
     <div className="modal-backdrop">
       <dialog
         ref={modalRef}
-        className="modal"
+        className="modal day-detail-modal"
         open
         aria-labelledby="day-title"
         tabIndex={-1}
@@ -530,6 +531,10 @@ function DayModal({
             </span>
           ))}
         </div>
+
+        <Link className="timeline-link" to={`/timeline/${day.date}`}>
+          Открыть полную хронологию дня <ChevronRight aria-hidden="true" />
+        </Link>
 
         <div className="detail-grid">
           <section className="panel">
@@ -575,7 +580,7 @@ function DayModal({
                     {point.metric.replace("welltory.", "")}
                   </span>
                   <b>
-                    {point.value.toFixed(1)} {point.unit ?? ""}
+                    {point.value == null ? (point.valueText ?? "—") : point.value.toFixed(1)} {point.unit ?? ""}
                   </b>
                 </div>
               ))}
@@ -768,6 +773,73 @@ function DayModal({
   );
 }
 
+const TimelineRoute = observer(function TimelineRoute() {
+  const { date } = useParams<{ date: string }>()
+  const navigate = useNavigate()
+  const day = store.dashboard?.days.find((item) => item.date === date)
+  const nextDateValue = new Date(`${date}T00:00:00Z`)
+  nextDateValue.setUTCDate(nextDateValue.getUTCDate() + 1)
+  const nextDate = `${nextDateValue.getUTCFullYear()}-${String(nextDateValue.getUTCMonth() + 1).padStart(2, "0")}-${String(nextDateValue.getUTCDate()).padStart(2, "0")}`
+  const nextDay = store.dashboard?.days.find((item) => item.date === nextDate)
+  const dialogRef = useRef<HTMLDialogElement>(null)
+  const closeTimeline = () => navigate(`/day/${day?.date ?? date}`)
+  useEffect(() => {
+    const dialog = dialogRef.current
+    if (!dialog) return
+    if (!dialog.open) dialog.showModal()
+    return () => {
+      if (dialog.open) dialog.close()
+    }
+  }, [day])
+  if (!store.dashboard) return null
+  if (!day) return <Navigate to="/" replace />
+  return (
+    <dialog
+      ref={dialogRef}
+      className="modal-backdrop timeline-backdrop"
+      aria-labelledby="timeline-title"
+      onCancel={(event) => {
+        event.preventDefault()
+        closeTimeline()
+      }}
+    >
+      <button
+        type="button"
+        className="timeline-backdrop-dismiss"
+        aria-label="Закрыть Ход дня"
+        onClick={closeTimeline}
+      />
+      <section className="modal timeline-modal">
+        <header>
+          <div>
+            <p className="eyebrow">Хронология дня · {store.dashboard.timezone}</p>
+            <h2 id="timeline-title" className="timeline-title">
+              Ход дня{" "}
+              <time>
+                {new Intl.DateTimeFormat("ru-RU", {
+                  day: "numeric",
+                  month: "long",
+                  year: "numeric",
+                  timeZone: "UTC",
+                }).format(new Date(`${day.date}T12:00:00Z`))}
+              </time>
+            </h2>
+            <p className="muted">Все сохранённые измерения и события в порядке времени</p>
+          </div>
+          <button className="icon-button" onClick={closeTimeline} aria-label="Закрыть">
+            <X aria-hidden="true" />
+          </button>
+        </header>
+        <DayTimelineChart
+          day={day}
+          timezone={store.dashboard.timezone}
+          nextDaySleepMetrics={nextDay?.detail.braceletMetrics}
+        />
+      </section>
+    </dialog>
+  )
+})
+
 const DayRoute = observer(function DayRoute() {
   const { date } = useParams<{ date: string }>();
   const day = store.dashboard?.days.find((item) => item.date === date);
@@ -888,6 +960,7 @@ export const SyncModal = observer(function SyncModal() {
 
 const Dashboard = observer(function Dashboard() {
   const dayMatch = useMatch("/day/:date");
+  const timelineMatch = useMatch("/timeline/:date");
   useEffect(() => {
     void store.load();
   }, []);
@@ -906,7 +979,7 @@ const Dashboard = observer(function Dashboard() {
   const displayedDayCount =
     store.dashboard?.days.length ?? inclusiveDateCount(store.from, store.to);
   return (
-    <main className={dayMatch || store.syncModalOpen ? "app blurred" : "app"}>
+    <main className={dayMatch || timelineMatch || store.syncModalOpen ? "app blurred" : "app"}>
       <header className="topbar">
         <div>
           <p className="eyebrow">Локальный обзор</p>
@@ -981,6 +1054,7 @@ export function App() {
     <Routes>
       <Route path="/" element={<Dashboard />}>
         <Route path="day/:date" element={<DayRoute />} />
+        <Route path="timeline/:date" element={<TimelineRoute />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

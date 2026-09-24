@@ -92,6 +92,10 @@ _Avoid_: Database dump, synchronization result
 The user-visible measurements and text associated with one logical day from Bracelet, Welltory, Todoist, and RescueTime; Private Diary is excluded.
 _Avoid_: Raw payload, database dump
 
+**Ход дня**:
+A popup with a shared timeline of saved measurements and events for one logical day, shown in the dashboard timezone. It has separate tracks for EMA and Todoist events, alongside Bracelet pulse and steps, RescueTime activity and productivity, and Welltory measurements; sleep and wake boundaries appear when they fall within the logical day.
+_Avoid_: Calendar-day timeline, complete personal history
+
 **Todoist task event**:
 The creation or completion of a Todoist task, including the task text and event time.
 _Avoid_: Task count, task snapshot

@@ -64,7 +64,8 @@ class MetricPoint(BaseModel):
     )
     timestamp: AwareDatetime
     metric: str
-    value: float
+    value: float | None
+    valueText: str | None = None
     unit: str | None = None
 
 
@@ -74,6 +75,21 @@ class TaskItem(BaseModel):
     )
     content: str
     timestamp: AwareDatetime
+
+
+class Status(StrEnum):
+    pending = 'pending'
+    answered = 'answered'
+    dismissed = 'dismissed'
+    expired = 'expired'
+
+
+class EmaEventItem(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    timestamp: AwareDatetime
+    status: Status
 
 
 class Perspective(StrEnum):
@@ -105,6 +121,7 @@ class TodoistSummary(BaseModel):
     )
     created: conint(ge=0)
     completed: conint(ge=0)
+    deleted: conint(ge=0)
 
 
 class SourceIndicator(BaseModel):
@@ -123,6 +140,8 @@ class DayDetail(BaseModel):
     welltoryMetrics: list[MetricPoint]
     createdTasks: list[TaskItem]
     completedTasks: list[TaskItem]
+    deletedTasks: list[TaskItem]
+    emaEvents: list[EmaEventItem]
     rescueTime: list[RescueTimeItem]
 
 
@@ -170,7 +189,7 @@ class SourceIssue(BaseModel):
     diagnosticId: str | None = None
 
 
-class Status(StrEnum):
+class Status1(StrEnum):
     idle = 'idle'
     pending = 'pending'
     success = 'success'
@@ -181,7 +200,7 @@ class DriveConnectionState(BaseModel):
     model_config = ConfigDict(
         extra='forbid',
     )
-    status: Status
+    status: Status1
     sessionId: str | None = None
     authorizationUrl: str | None = None
     issue: SourceIssue | None = None

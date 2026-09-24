@@ -179,6 +179,62 @@ class DashboardTest(unittest.TestCase):
         self.assertNotIn("/private/path", encoded)
         self.assertEqual(result["days"][0]["quality"], "complete")
 
+    def test_unchanged_full_record_payloads_rebuild_compact_projection(self):
+        records = [
+            {
+                "recordType": "steps",
+                "origin": "com.xiaomi.wearable",
+                "startTime": "2026-09-10T07:00:00Z",
+                "endTime": "2026-09-10T08:00:00Z",
+                "count": 250,
+            },
+            {
+                "recordType": "sleep_session",
+                "origin": "com.xiaomi.wearable",
+                "startTime": "2026-09-10T00:00:00Z",
+                "endTime": "2026-09-10T07:00:00Z",
+                "stages": [
+                    {"startTime": "2026-09-10T02:00:00Z", "endTime": "2026-09-10T06:00:00Z", "stage": 4},
+                    {"startTime": "2026-09-10T06:00:00Z", "endTime": "2026-09-10T06:30:00Z", "stage": 1},
+                ],
+            },
+        ]
+        path = self.cache / "unchanged-full-records.json"
+        path.write_text(
+            json.dumps({"header": {"schemaVersion": 1, "recordCount": len(records)}, "records": records}),
+            encoding="utf-8",
+        )
+        import_fitness_drive(self.config)
+        unchanged = import_fitness_drive(self.config)
+        self.assertFalse(unchanged["rebuild"])
+
+        with connect(self.config.database) as conn:
+            conn.execute(
+                "UPDATE metric_events SET payload_json = ? "
+                "WHERE source = 'fitness_drive' AND metric = 'fitness_drive.steps'",
+                (json.dumps(records[0]),),
+            )
+            conn.execute(
+                "UPDATE metric_events SET payload_json = ? "
+                "WHERE source = 'fitness_drive' AND metric LIKE 'fitness_drive.sleep.%_seconds'",
+                (json.dumps(records[1]),),
+            )
+
+        second = import_fitness_drive(self.config)
+        self.assertTrue(second["rebuild"])
+        self.assertEqual(second["files"], 1)
+        with connect(self.config.database) as conn:
+            rows = conn.execute(
+                "SELECT metric, payload_json FROM metric_events "
+                "WHERE source = 'fitness_drive'"
+            ).fetchall()
+        self.assertEqual(len(rows), 3)
+        by_metric = {row["metric"]: json.loads(row["payload_json"]) for row in rows}
+        self.assertNotIn("count", by_metric["fitness_drive.steps"])
+        for metric, payload in by_metric.items():
+            if metric.startswith("fitness_drive.sleep."):
+                self.assertNotIn("stages", payload)
+
     def test_overlapping_fitness_files_deduplicate_and_exclude_awake_seconds(self):
         file1 = self.cache / "sync-file-1.json"
         file2 = self.cache / "backfill-file-2.json"

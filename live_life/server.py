@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Self
 import fcntl
 import json
+import logging
 import subprocess
 import sys
 import queue
@@ -33,6 +34,7 @@ from .api_models import DriveClientUpload, DriveConnectionState
 
 
 ROOT = Path(__file__).resolve().parent.parent
+LOGGER = logging.getLogger(__name__)
 app = FastAPI(title="Live Life Local Dashboard", docs_url="/docs")
 
 
@@ -186,7 +188,6 @@ def _start_sync_process(start: date, end: date):
         ],
         cwd=ROOT,
         stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL,
         text=True,
         bufsize=1,
     )
@@ -232,6 +233,7 @@ def _sync_exit_event(proc, deadline):
     if proc.returncode == 75:
         return _stream_sync_error_event("SYNC_ALREADY_RUNNING", SYNC_ALREADY_RUNNING_MESSAGE)
     if proc.returncode != 0:
+        LOGGER.error("dashboard_sync_worker_failed exit_code=%s", proc.returncode)
         return _stream_sync_error_event("SYNC_FAILED", "Данные не обновлены. Проверьте журнал data/logs/bracelet.jsonl.")
     return None
 
@@ -259,9 +261,21 @@ def _stream_sync_events(start: date, end: date, *, timeout: int):
                 break
     except subprocess.TimeoutExpired:
         proc.kill()
+        LOGGER.error(
+            "dashboard_sync_worker_timed_out from=%s to=%s timeout_seconds=%s",
+            start.isoformat(),
+            end.isoformat(),
+            timeout,
+        )
         yield _stream_sync_error_event("SYNC_TIMEOUT", "Обновление данных заняло слишком много времени. Повторите обновление.")
-    except Exception:
+    except Exception as exc:
         proc.kill()
+        LOGGER.exception(
+            "dashboard_sync_stream_failed from=%s to=%s error_type=%s",
+            start.isoformat(),
+            end.isoformat(),
+            type(exc).__name__,
+        )
         yield _stream_sync_error_event("SYNC_FAILED", "Не удалось завершить обновление данных.")
     finally:
         _stop_sync_process(proc)
