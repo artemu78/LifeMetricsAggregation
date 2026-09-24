@@ -250,6 +250,31 @@ def import_fitness_drive(config: Config) -> dict[str, object]:
             LIMIT 1
             """
         ).fetchone()["count"]
+        full_record_payloads = conn.execute(
+            """
+            SELECT COUNT(*) AS count FROM metric_events
+            WHERE source = 'fitness_drive'
+              AND CASE WHEN json_valid(payload_json) THEN (
+                    (metric = 'fitness_drive.heart_rate'
+                     AND json_type(payload_json, '$.samples') = 'array')
+                 OR (metric = 'fitness_drive.steps'
+                     AND json_type(payload_json, '$.count') IS NOT NULL)
+                 OR (metric LIKE 'fitness_drive.sleep.%_seconds'
+                     AND json_type(payload_json, '$.stages') = 'array')
+                 OR (metric = 'fitness_drive.distance'
+                     AND json_type(payload_json, '$.distanceMeters') IS NOT NULL)
+                 OR (metric = 'fitness_drive.total_calories'
+                     AND json_type(payload_json, '$.energyKilocalories') IS NOT NULL)
+                 OR (metric = 'fitness_drive.exercise'
+                     AND json_type(payload_json, '$.endTime') IS NOT NULL)
+                 OR (metric = 'fitness_drive.resting_heart_rate'
+                     AND json_type(payload_json, '$.beatsPerMinute') IS NOT NULL)
+                 OR (metric = 'fitness_drive.oxygen_saturation'
+                     AND json_type(payload_json, '$.percentage') IS NOT NULL)
+              ) ELSE 1 END
+            LIMIT 1
+            """
+        ).fetchone()["count"]
 
     changed_paths = paths if legacy_rows > 0 else [
         path for path in paths
@@ -259,7 +284,12 @@ def import_fitness_drive(config: Config) -> dict[str, object]:
     # database stores only one origin_file. Reconcile every cached export when
     # anything changes so deleting the row owned by one file cannot hide an
     # identical row still supplied by an unchanged file.
-    rebuild = legacy_rows > 0 or legacy_heart_rate_ids > 0 or bool(changed_paths)
+    rebuild = (
+        legacy_rows > 0
+        or legacy_heart_rate_ids > 0
+        or full_record_payloads > 0
+        or bool(changed_paths)
+    )
     selected = paths if rebuild else []
 
     staged: dict[Path, list[tuple[str, str, str, float, str, dict]]] = {}

@@ -567,7 +567,7 @@ class PipelineTest(unittest.TestCase):
                 "SELECT value_num, origin_file, length(payload_json) AS payload_bytes "
                 "FROM metric_events WHERE source = 'fitness_drive' LIMIT 3"
             ).fetchall()
-        self.assertEqual([row["value_num"] for row in rows], [62.0, 63.0])
+        self.assertEqual(sorted(row["value_num"] for row in rows), [62.0, 63.0])
         self.assertEqual({row["origin_file"] for row in rows}, {str(latest_path.resolve())})
         self.assertLess(max(row["payload_bytes"] for row in rows), 120)
 
