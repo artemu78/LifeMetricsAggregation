@@ -1,0 +1,420 @@
+import { useState, useRef, useId } from "react";
+import type { components } from "./generated/api-types";
+
+type Metric =
+  components["schemas"]["DashboardDay"]["detail"]["braceletMetrics"][number];
+
+export interface SleepStagesChartProps {
+  sleepMetrics: Metric[];
+  timezone: string;
+}
+
+export type SleepPhaseKey = "deep" | "light" | "rem" | "awake";
+
+export interface SleepPhaseConfig {
+  key: SleepPhaseKey;
+  label: string;
+  name: string;
+  level: number;
+  color: string;
+}
+
+export const SLEEP_PHASES: readonly SleepPhaseConfig[] = [
+  { key: "awake", label: "awake", name: "Пробуждение", level: 3, color: "#e07a5f" },
+  { key: "rem", label: "rem", name: "Быстрый сон", level: 2, color: "#8f78b5" },
+  { key: "light", label: "light", name: "Лёгкий сон", level: 1, color: "#5c95c4" },
+  { key: "deep", label: "deep", name: "Глубокий сон", level: 0, color: "#2c467a" },
+] as const;
+
+export function normalizeSleepPhase(metric: string): SleepPhaseKey {
+  const clean = metric
+    .replace("fitness_drive.sleep.", "")
+    .replace("_seconds", "")
+    .toLowerCase();
+
+  if (clean.includes("deep")) return "deep";
+  if (clean.includes("rem")) return "rem";
+  if (clean.includes("awake") || clean.includes("out_of_bed")) return "awake";
+  return "light";
+}
+
+export interface SleepInterval {
+  start: number;
+  end: number;
+  phase: SleepPhaseKey;
+  durationSec: number;
+}
+
+export function extractSleepIntervals(metrics: Metric[]): SleepInterval[] {
+  const sleepPoints = metrics
+    .filter((p) => p.metric.startsWith("fitness_drive.sleep."))
+    .sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+
+  if (!sleepPoints.length) return [];
+
+  const intervals: SleepInterval[] = [];
+
+  for (let i = 0; i < sleepPoints.length; i++) {
+    const p = sleepPoints[i];
+    const start = Date.parse(p.timestamp);
+    if (isNaN(start)) continue;
+
+    const phase = normalizeSleepPhase(p.metric);
+    let durationSec = p.value != null && p.value > 0 ? p.value : 0;
+
+    if (!durationSec) {
+      if (i + 1 < sleepPoints.length) {
+        const nextStart = Date.parse(sleepPoints[i + 1].timestamp);
+        if (!isNaN(nextStart) && nextStart > start) {
+          durationSec = Math.round((nextStart - start) / 1000);
+        } else {
+          durationSec = 900;
+        }
+      } else {
+        durationSec = 900;
+      }
+    }
+
+    const end = start + durationSec * 1000;
+    intervals.push({ start, end, phase, durationSec });
+  }
+
+  for (let i = 0; i < intervals.length - 1; i++) {
+    if (intervals[i].end > intervals[i + 1].start) {
+      intervals[i].end = intervals[i + 1].start;
+      intervals[i].durationSec = Math.max(
+        60,
+        Math.round((intervals[i].end - intervals[i].start) / 1000),
+      );
+    }
+  }
+
+  return intervals;
+}
+
+function formatDuration(seconds: number): string {
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 1) return "< 1 мин";
+  const wholeHours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  if (!wholeHours) return `${remainingMinutes} мин`;
+  return remainingMinutes
+    ? `${wholeHours} ч ${remainingMinutes} мин`
+    : `${wholeHours} ч`;
+}
+
+const WIDTH = 800;
+const HEIGHT = 180;
+const LEFT = 72;
+const RIGHT = 24;
+const TOP = 22;
+const BOTTOM = 148;
+const PLOT_WIDTH = WIDTH - LEFT - RIGHT;
+const PLOT_HEIGHT = BOTTOM - TOP;
+const STEP_Y = PLOT_HEIGHT / 3;
+
+const Y_LEVELS: Record<SleepPhaseKey, number> = {
+  awake: TOP,
+  rem: TOP + STEP_Y,
+  light: TOP + 2 * STEP_Y,
+  deep: BOTTOM,
+};
+
+export function SleepStagesChart({
+  sleepMetrics,
+  timezone,
+}: SleepStagesChartProps) {
+  const intervals = extractSleepIntervals(sleepMetrics);
+  const svgRef = useRef<SVGSVGElement>(null);
+  const idPrefix = useId().replace(/:/g, "");
+  const lineGradientId = `sleep-line-gradient-${idPrefix}`;
+  const areaGradientId = `sleep-area-gradient-${idPrefix}`;
+
+  const [hoverInfo, setHoverInfo] = useState<{
+    x: number;
+    y: number;
+    timeStr: string;
+    phaseConfig: SleepPhaseConfig;
+    durationStr: string;
+  } | null>(null);
+
+  if (!intervals.length) {
+    return <p className="muted sleep-empty">Нет данных о фазах сна</p>;
+  }
+
+  const minTime = intervals[0].start;
+  const maxTime = Math.max(
+    minTime + 3600_000,
+    intervals[intervals.length - 1].end,
+  );
+
+  const timeToX = (t: number) =>
+    LEFT +
+    ((Math.max(minTime, Math.min(maxTime, t)) - minTime) /
+      (maxTime - minTime || 1)) *
+      PLOT_WIDTH;
+
+  let lineD = "";
+  const first = intervals[0];
+  const firstX = timeToX(first.start);
+  const firstY = Y_LEVELS[first.phase];
+
+  lineD += `M ${firstX.toFixed(1)} ${firstY.toFixed(1)}`;
+
+  for (let i = 0; i < intervals.length; i++) {
+    const curr = intervals[i];
+    const currY = Y_LEVELS[curr.phase];
+    const currStartX = timeToX(curr.start);
+    const currEndX = timeToX(curr.end);
+
+    const next = intervals[i + 1];
+
+    if (!next) {
+      lineD += ` L ${currEndX.toFixed(1)} ${currY.toFixed(1)}`;
+      break;
+    }
+
+    const nextY = Y_LEVELS[next.phase];
+    const nextStartX = timeToX(next.start);
+
+    const gapMinutes = (next.start - curr.end) / 60_000;
+    if (gapMinutes > 15 && curr.phase !== "awake" && next.phase !== "awake") {
+      const yAwake = Y_LEVELS.awake;
+      const transW = Math.min(16, (currEndX - currStartX) * 0.3);
+      const flatEndX = Math.max(currStartX, currEndX - transW);
+      lineD += ` L ${flatEndX.toFixed(1)} ${currY.toFixed(1)}`;
+
+      const mid1X = (flatEndX + currEndX) / 2;
+      lineD += ` C ${mid1X.toFixed(1)} ${currY.toFixed(1)}, ${mid1X.toFixed(1)} ${yAwake.toFixed(1)}, ${currEndX.toFixed(1)} ${yAwake.toFixed(1)}`;
+
+      lineD += ` L ${nextStartX.toFixed(1)} ${yAwake.toFixed(1)}`;
+
+      const transNextW = Math.min(16, (timeToX(next.end) - nextStartX) * 0.3);
+      const mid2X = (nextStartX + nextStartX + transNextW) / 2;
+      lineD += ` C ${mid2X.toFixed(1)} ${yAwake.toFixed(1)}, ${mid2X.toFixed(1)} ${nextY.toFixed(1)}, ${(nextStartX + transNextW).toFixed(1)} ${nextY.toFixed(1)}`;
+      continue;
+    }
+
+    const maxW = Math.min(
+      (currEndX - currStartX) * 0.25,
+      (timeToX(next.end) - nextStartX) * 0.25,
+      14,
+    );
+    const transW = Math.max(3, maxW);
+    const tStartX = Math.max(currStartX, currEndX - transW / 2);
+    const tEndX = Math.min(timeToX(next.end), nextStartX + transW / 2);
+    const tMidX = (tStartX + tEndX) / 2;
+
+    lineD += ` L ${tStartX.toFixed(1)} ${currY.toFixed(1)}`;
+    lineD += ` C ${tMidX.toFixed(1)} ${currY.toFixed(1)}, ${tMidX.toFixed(1)} ${nextY.toFixed(1)}, ${tEndX.toFixed(1)} ${nextY.toFixed(1)}`;
+  }
+
+  const lastX = timeToX(intervals[intervals.length - 1].end);
+  const areaD = `${lineD} L ${lastX.toFixed(1)} ${BOTTOM.toFixed(1)} L ${firstX.toFixed(1)} ${BOTTOM.toFixed(1)} Z`;
+
+  const numTicks = 5;
+  const ticks: { time: number; x: number; label: string }[] = [];
+  for (let i = 0; i < numTicks; i++) {
+    const t = minTime + (i / (numTicks - 1)) * (maxTime - minTime);
+    const date = new Date(t);
+    const label = date.toLocaleTimeString("ru-RU", {
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZone: timezone,
+    });
+    ticks.push({ time: t, x: timeToX(t), label });
+  }
+
+  const handlePointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
+    if (!svgRef.current) return;
+    const rect = svgRef.current.getBoundingClientRect();
+    const svgX = ((e.clientX - rect.left) / rect.width) * WIDTH;
+    if (svgX < LEFT || svgX > LEFT + PLOT_WIDTH) {
+      setHoverInfo(null);
+      return;
+    }
+    const hoverTime =
+      minTime + ((svgX - LEFT) / PLOT_WIDTH) * (maxTime - minTime);
+    const match =
+      intervals.find((int) => hoverTime >= int.start && hoverTime <= int.end) ??
+      intervals[intervals.length - 1];
+
+    const config =
+      SLEEP_PHASES.find((p) => p.key === match.phase) ?? SLEEP_PHASES[2];
+    const date = new Date(hoverTime);
+    const timeStr = date.toLocaleTimeString("ru-RU", {
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZone: timezone,
+    });
+    const durationStr = formatDuration(match.durationSec);
+
+    setHoverInfo({
+      x: svgX,
+      y: Y_LEVELS[match.phase],
+      timeStr,
+      phaseConfig: config,
+      durationStr,
+    });
+  };
+
+  return (
+    <div className="sleep-chart-card">
+      <svg
+        ref={svgRef}
+        className="sleep-chart-svg"
+        viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
+        role="img"
+        aria-label="График фаз сна на временной шкале"
+        onPointerMove={handlePointerMove}
+        onPointerLeave={() => setHoverInfo(null)}
+      >
+        <defs>
+          <linearGradient
+            id={lineGradientId}
+            gradientUnits="userSpaceOnUse"
+            x1="0"
+            y1={BOTTOM}
+            x2="0"
+            y2={TOP}
+          >
+            <stop offset="0%" stopColor="#2c467a" />
+            <stop offset="33.3%" stopColor="#5c95c4" />
+            <stop offset="66.7%" stopColor="#8f78b5" />
+            <stop offset="100%" stopColor="#e07a5f" />
+          </linearGradient>
+          <linearGradient
+            id={areaGradientId}
+            gradientUnits="userSpaceOnUse"
+            x1="0"
+            y1={BOTTOM}
+            x2="0"
+            y2={TOP}
+          >
+            <stop offset="0%" stopColor="#2c467a" stopOpacity="0.06" />
+            <stop offset="33.3%" stopColor="#5c95c4" stopOpacity="0.14" />
+            <stop offset="66.7%" stopColor="#8f78b5" stopOpacity="0.20" />
+            <stop offset="100%" stopColor="#e07a5f" stopOpacity="0.26" />
+          </linearGradient>
+        </defs>
+
+        {SLEEP_PHASES.map((phase) => {
+          const y = Y_LEVELS[phase.key];
+          return (
+            <g key={phase.key} className="sleep-axis-group">
+              <line
+                x1={LEFT}
+                y1={y}
+                x2={LEFT + PLOT_WIDTH}
+                y2={y}
+                stroke="#e4ece8"
+                strokeDasharray="4 4"
+                strokeWidth="1"
+              />
+              <circle cx={LEFT - 46} cy={y} r="3" fill={phase.color} />
+              <text
+                x={LEFT - 8}
+                y={y + 4}
+                textAnchor="end"
+                className="sleep-axis-label"
+                fill={phase.color}
+                fontSize="12"
+                fontWeight="600"
+              >
+                {phase.label}
+              </text>
+            </g>
+          );
+        })}
+
+        <path d={areaD} fill={`url(#${areaGradientId})`} />
+
+        <path
+          d={lineD}
+          fill="none"
+          stroke={`url(#${lineGradientId})`}
+          strokeWidth="3.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+
+        {ticks.map((tick, idx) => (
+          <g key={idx}>
+            <line
+              x1={tick.x}
+              y1={BOTTOM}
+              x2={tick.x}
+              y2={BOTTOM + 5}
+              stroke="#b5c7bf"
+              strokeWidth="1"
+            />
+            <text
+              x={tick.x}
+              y={BOTTOM + 18}
+              textAnchor="middle"
+              className="sleep-time-tick"
+            >
+              {tick.label}
+            </text>
+          </g>
+        ))}
+
+        {hoverInfo && (
+          <g className="sleep-hover-indicator" pointerEvents="none">
+            <line
+              x1={hoverInfo.x}
+              y1={TOP}
+              x2={hoverInfo.x}
+              y2={BOTTOM}
+              stroke="#7c9288"
+              strokeDasharray="3 3"
+              strokeWidth="1.2"
+            />
+            <circle
+              cx={hoverInfo.x}
+              cy={hoverInfo.y}
+              r="5.5"
+              fill={hoverInfo.phaseConfig.color}
+              stroke="#ffffff"
+              strokeWidth="2"
+            />
+            {(() => {
+              const tooltipWidth = 170;
+              const tooltipHeight = 44;
+              const tooltipX = Math.max(
+                LEFT,
+                Math.min(WIDTH - RIGHT - tooltipWidth, hoverInfo.x - tooltipWidth / 2),
+              );
+              const tooltipY = Math.max(4, hoverInfo.y - tooltipHeight - 10);
+              return (
+                <g transform={`translate(${tooltipX}, ${tooltipY})`}>
+                  <rect
+                    width={tooltipWidth}
+                    height={tooltipHeight}
+                    rx="6"
+                    fill="rgba(255, 255, 255, 0.96)"
+                    stroke="#c6d5cd"
+                    strokeWidth="1"
+                    filter="drop-shadow(0 2px 6px rgba(0,0,0,0.12))"
+                  />
+                  <text
+                    x="10"
+                    y="18"
+                    fontSize="11"
+                    fontWeight="700"
+                    fill={hoverInfo.phaseConfig.color}
+                  >
+                    {hoverInfo.timeStr} · {hoverInfo.phaseConfig.label}
+                  </text>
+                  <text x="10" y="34" fontSize="10.5" fill="#49655b">
+                    {hoverInfo.phaseConfig.name} ({hoverInfo.durationStr})
+                  </text>
+                </g>
+              );
+            })()}
+          </g>
+        )}
+      </svg>
+    </div>
+  );
+}
