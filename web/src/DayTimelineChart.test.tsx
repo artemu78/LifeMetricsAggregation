@@ -101,6 +101,21 @@ function installIntersectionObserver() {
   return { disconnect, observe };
 }
 
+function installDashboard() {
+  const dashboard = {
+    from: day.date,
+    to: day.date,
+    timezone: "Europe/Moscow",
+    generatedAt: "2026-09-24T12:00:00+03:00",
+    days: [day],
+  };
+  dashboardStore.dashboard = dashboard as unknown as typeof dashboardStore.dashboard;
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+    ok: true,
+    json: async () => dashboard,
+  }));
+}
+
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
@@ -120,12 +135,18 @@ describe("DayTimelineChart", () => {
     expect(container.querySelectorAll(".chart-step-bar")).toHaveLength(2);
     expect(container.querySelectorAll(".chart-sleep-boundary")).toHaveLength(2);
     expect(container.querySelectorAll(".welltory-measurement")).toHaveLength(4);
-    expect(container.querySelectorAll(".chart-duration-segment")).toHaveLength(5);
+    expect(container.querySelectorAll(".chart-duration-segment")).toHaveLength(2);
+    expect(container.querySelectorAll(".chart-workout-segment")).toHaveLength(1);
+    expect(within(container).getByText("ТРЕНИРОВКИ")).toBeInTheDocument();
     expect(container.querySelectorAll(".todoist-marker")).toHaveLength(2);
     expect(within(container).getByText("3", { selector: ".todoist-count-badge" })).toBeInTheDocument();
     expect(container.querySelectorAll(".chart-time-axis .chart-tick").length).toBeGreaterThan(0);
     expect(container.querySelector(".chart-axis-sticky")).toBeInTheDocument();
     expect(observer.observe).toHaveBeenCalled();
+
+    const workout = container.querySelector(".chart-workout-segment")!;
+    fireEvent.mouseEnter(workout, { clientX: 250, clientY: 330 });
+    expect(screen.getByRole("tooltip")).toHaveTextContent("Тренировка · 1 сек");
 
     const step = container.querySelector(".chart-step-hit-area")!;
     fireEvent.mouseEnter(step, { clientX: 200, clientY: 120 });
@@ -161,6 +182,37 @@ describe("DayTimelineChart", () => {
     expect(observer.disconnect).toHaveBeenCalled();
   });
 
+  it("groups consecutive activity rows by name and productivity level in five lanes", () => {
+    const activityDay: Day = {
+      ...day,
+      date: "2026-09-18",
+      detail: {
+        ...day.detail,
+        rescueTime: [
+          { timestamp: "2026-09-18T16:10:00+03:00", perspective: "activity", label: "Search", seconds: 44, productivityLevel: 0 },
+          { timestamp: "2026-09-18T16:10:00+03:00", perspective: "activity", label: "Zoom", seconds: 256, productivityLevel: 1 },
+          { timestamp: "2026-09-18T16:15:00+03:00", perspective: "activity", label: "Chat", seconds: 9, productivityLevel: -2 },
+          { timestamp: "2026-09-18T16:15:00+03:00", perspective: "activity", label: "Zoom", seconds: 291, productivityLevel: 1 },
+          { timestamp: "2026-09-18T16:15:00+03:00", perspective: "productivity", label: "1", seconds: 291 },
+        ],
+      },
+    };
+    const { container } = render(<DayTimelineChart day={activityDay} timezone="Europe/Moscow" />);
+    expect(within(container).getByText("АКТИВНОСТЬ")).toBeInTheDocument();
+    expect(within(container).queryByText("ПРОДУКТИВНОСТЬ")).not.toBeInTheDocument();
+    expect(container.querySelectorAll(".chart-activity-lane-label")).toHaveLength(5);
+    const segments = [...container.querySelectorAll<SVGRectElement>(".chart-activity-segment")];
+    const zoom = segments.filter((segment) => segment.getAttribute("aria-label")?.startsWith("Zoom"));
+    expect(zoom).toHaveLength(1);
+    expect(zoom[0]).toHaveAttribute("y", "400");
+    expect(zoom[0]).toHaveAttribute("aria-label", expect.stringContaining("Другая работа"));
+    const chat = segments.find((segment) => segment.getAttribute("aria-label")?.startsWith("Chat"))!;
+    expect(chat).toHaveAttribute("y", "442");
+    expect(segments).toHaveLength(3);
+    fireEvent.mouseEnter(zoom[0], { clientX: 350, clientY: 220 });
+    expect(screen.getByRole("tooltip")).toHaveTextContent("Zoom · Другая работа");
+  });
+
   it("selects Welltory and event details and clears selection when the pointer leaves chart items", () => {
     const { container } = render(<DayTimelineChart day={day} timezone="Europe/Moscow" />);
     const energyMeasurement = [...container.querySelectorAll(".welltory-measurement")]
@@ -190,6 +242,42 @@ describe("DayTimelineChart", () => {
     render(<DayTimelineChart day={emptyDay} timezone="Europe/Moscow" />);
     expect(screen.getByText("Для этой даты нет точек графика.")).toBeInTheDocument();
     expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+  });
+
+  it("keeps the hover time on the sticky axis aligned with the chart while scrolling", () => {
+    installIntersectionObserver();
+    const { container } = render(<DayTimelineChart day={day} timezone="Europe/Moscow" />);
+    const scroll = container.querySelector<HTMLElement>(".day-chart-scroll")!;
+    const chart = scroll.querySelector<SVGSVGElement>("svg")!;
+    let chartLeft = 20;
+    vi.spyOn(scroll, "getBoundingClientRect").mockImplementation(() => ({
+      left: 20, width: 600, top: 0, height: 500, right: 620, bottom: 500,
+      x: 20, y: 0, toJSON: () => ({}),
+    } as DOMRect));
+    vi.spyOn(chart, "getBoundingClientRect").mockImplementation(() => ({
+      left: chartLeft, width: 1240, top: 0, height: 500, right: chartLeft + 1240, bottom: 500,
+      x: chartLeft, y: 0, toJSON: () => ({}),
+    } as DOMRect));
+    fireEvent(window, new Event("resize"));
+    fireEvent.mouseEnter(scroll, { clientX: 300 });
+
+    const chartTime = () => container.querySelector(".chart-time-axis .chart-cursor-time text")?.textContent;
+    const stickyTime = () => container.querySelector(".chart-axis-sticky .chart-cursor-time text")?.textContent;
+    expect(chartTime()).toBeTruthy();
+    expect(stickyTime()).toBe(chartTime());
+    expect(container.querySelector(".chart-axis-sticky")).toHaveStyle({ left: "20px", width: "600px" });
+    expect(container.querySelector(".chart-axis-sticky svg")).toHaveStyle({ width: "1240px" });
+
+    const originalX = Number(container.querySelector(".chart-cursor-line")?.getAttribute("x1"));
+    chartLeft = -80;
+    fireEvent.scroll(scroll, { target: { scrollLeft: 100 } });
+    expect(Number(container.querySelector(".chart-cursor-line")?.getAttribute("x1"))).toBeCloseTo(originalX + 100, 0);
+    expect(stickyTime()).toBe(chartTime());
+    expect(container.querySelector(".chart-axis-sticky svg")).toHaveStyle({ transform: "translateX(-100px)" });
+
+    fireEvent.mouseLeave(scroll);
+    expect(container.querySelector(".chart-cursor-line")).not.toBeInTheDocument();
+    expect(stickyTime()).toBeUndefined();
   });
 
   it("shows the closest heart sample and safely ignores a missing SVG box", () => {
@@ -262,18 +350,7 @@ describe("DayTimelineChart", () => {
   });
 
   it("opens the timeline route in a native dialog and closes it from the backdrop control", async () => {
-    const dashboard = {
-      from: day.date,
-      to: day.date,
-      timezone: "Europe/Moscow",
-      generatedAt: "2026-09-24T12:00:00+03:00",
-      days: [day],
-    };
-    dashboardStore.dashboard = dashboard as unknown as typeof dashboardStore.dashboard;
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => dashboard,
-    }));
+    installDashboard();
     Object.defineProperty(HTMLDialogElement.prototype, "showModal", {
       configurable: true,
       value(this: HTMLDialogElement) { this.open = true; },
@@ -291,9 +368,178 @@ describe("DayTimelineChart", () => {
     const dialog = await screen.findByRole("dialog", { name: /Ход дня/ });
     await waitFor(() => expect((dialog as HTMLDialogElement).open).toBe(true));
     fireEvent.click(screen.getByRole("button", { name: "Закрыть Ход дня" }));
-    await waitFor(() => expect((dialog as HTMLDialogElement).open).toBe(false));
-    expect(container.querySelector(".day-chart-card")).not.toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: day.date })).toBeInTheDocument();
+    expect(container.querySelector(".day-detail-modal .day-chart-card")).toBeInTheDocument();
     await waitFor(() => expect(dashboardStore.loading).toBe(false));
+    dashboardStore.dashboard = null;
+  });
+
+  it("does not show EMA events without responses and only shows answered EMA events", () => {
+    const emaDay: Day = {
+      ...day,
+      detail: {
+        ...day.detail,
+        emaEvents: [
+          { timestamp: "2026-09-24T12:00:00+03:00", status: "pending" },
+          { timestamp: "2026-09-24T12:01:00+03:00", status: "answered" },
+          { timestamp: "2026-09-24T12:02:00+03:00", status: "dismissed" },
+          { timestamp: "2026-09-24T12:03:00+03:00", status: "expired" },
+        ],
+      },
+    };
+    const { container } = render(<DayTimelineChart day={emaDay} timezone="Europe/Moscow" />);
+    const emaGauges = container.querySelectorAll(".ema-speedometer");
+    expect(emaGauges).toHaveLength(1);
+    expect(container.querySelector("circle[fill='#c39439']")).not.toBeInTheDocument();
+    expect(container.querySelector("circle[fill='#b45c54']")).not.toBeInTheDocument();
+    expect(container.querySelector("circle[fill='#87948e']")).not.toBeInTheDocument();
+
+    fireEvent.mouseEnter(emaGauges[0], { clientX: 350, clientY: 220 });
+    expect(screen.getByRole("tooltip")).toHaveTextContent("EMA · ответ отправлен");
+  });
+
+  it("shows EMA event details including mood, energy, focus, stress, activity, and note in tooltip without numbers or titles on gauge", () => {
+    const emaDay: Day = {
+      ...day,
+      detail: {
+        ...day.detail,
+        emaEvents: [
+          {
+            timestamp: "2026-09-24T12:01:00+03:00",
+            status: "answered",
+            mood: 4,
+            energy: 3,
+            focus: 2,
+            stress: 1,
+            activity: "work_coding",
+            note: "focused session",
+          },
+        ],
+      },
+    };
+    const { container } = render(<DayTimelineChart day={emaDay} timezone="Europe/Moscow" />);
+    const emaGauge = container.querySelector(".ema-speedometer");
+    expect(emaGauge).toBeInTheDocument();
+
+    // Verify 3 concentric tracks are present: mood (outer), energy (middle), stress (inner)
+    expect(emaGauge!.querySelector(".ema-track-mood")).toBeInTheDocument();
+    expect(emaGauge!.querySelector(".ema-track-energy")).toBeInTheDocument();
+    expect(emaGauge!.querySelector(".ema-track-stress")).toBeInTheDocument();
+
+    // Verify no numbers and no text titles are rendered inside the speedometer gauge
+    expect(emaGauge!.querySelector("text")).toBeNull();
+
+    fireEvent.mouseEnter(emaGauge!, { clientX: 350, clientY: 220 });
+    fireEvent.mouseMove(emaGauge!, { clientX: 351, clientY: 221 });
+    fireEvent.click(emaGauge!, { clientX: 351, clientY: 221 });
+    const tooltip = screen.getByRole("tooltip");
+    expect(tooltip).toHaveTextContent("EMA · ответ отправлен");
+    expect(tooltip).toHaveTextContent("настроение: 4/5, энергия: 3/5, фокус: 2/5, стресс: 1/5");
+    expect(tooltip).toHaveTextContent("занятие: Work / coding");
+    expect(tooltip).toHaveTextContent("заметка: focused session");
+  });
+
+  it("renders EMA activity as Lucide icon on СОБЫТИЯ track above other events", () => {
+    const emaDay: Day = {
+      ...day,
+      detail: {
+        ...day.detail,
+        emaEvents: [
+          {
+            timestamp: "2026-09-24T12:01:00+03:00",
+            status: "answered",
+            mood: 4,
+            energy: 3,
+            focus: 2,
+            stress: 1,
+            activity: "work_coding",
+            note: "focused session",
+          },
+        ],
+      },
+    };
+    const { container } = render(<DayTimelineChart day={emaDay} timezone="Europe/Moscow" />);
+    const activityMarker = container.querySelector(".ema-activity-marker");
+    expect(activityMarker).toBeInTheDocument();
+    expect(activityMarker).toHaveAttribute("aria-label", "EMA · Work / coding");
+
+    // The foreignObject containing the activity marker should be at y = 608 (above dots at cy >= 640)
+    const foreignObject = activityMarker!.parentElement;
+    expect(foreignObject).toHaveAttribute("y", "608");
+
+    // Hovering and clicking the activity icon displays the EMA activity tooltip
+    fireEvent.mouseEnter(activityMarker!, { clientX: 350, clientY: 220 });
+    fireEvent.mouseMove(activityMarker!, { clientX: 351, clientY: 221 });
+    fireEvent.click(activityMarker!, { clientX: 351, clientY: 221 });
+    const tooltip = screen.getByRole("tooltip");
+    expect(tooltip).toHaveTextContent("EMA · Work / coding");
+    expect(tooltip).toHaveTextContent("заметка: focused session");
+  });
+
+  it("renders workout blocks with durations, titles, and hover tooltip on the separate track", () => {
+    const workoutDay: Day = {
+      ...day,
+      detail: {
+        ...day.detail,
+        braceletMetrics: [
+          {
+            timestamp: "2026-09-24T08:00:00+03:00",
+            metric: "fitness_drive.exercise",
+            value: 2700,
+            valueText: "Бег",
+          },
+          {
+            timestamp: "2026-09-24T14:00:00+03:00",
+            metric: "fitness_drive.exercise",
+            value: 3600,
+            valueText: "Велосипед",
+          },
+          {
+            timestamp: "2026-09-24T16:00:00+03:00",
+            metric: "fitness_drive.exercise",
+            value: 0,
+            valueText: "",
+          },
+          {
+            timestamp: "2026-09-24T18:00:00+03:00",
+            metric: "fitness_drive.exercise",
+            value: 4800,
+          },
+        ],
+      },
+    };
+    const { container } = render(<DayTimelineChart day={workoutDay} timezone="Europe/Moscow" />);
+    const workoutSegments = container.querySelectorAll(".chart-workout-segment");
+    expect(workoutSegments).toHaveLength(4);
+
+    fireEvent.mouseEnter(workoutSegments[0], { clientX: 200, clientY: 330 });
+    expect(screen.getByRole("tooltip")).toHaveTextContent("Бег · 45 мин");
+
+    fireEvent.mouseEnter(workoutSegments[1], { clientX: 400, clientY: 330 });
+    expect(screen.getByRole("tooltip")).toHaveTextContent("Велосипед · 1 ч");
+
+    fireEvent.mouseEnter(workoutSegments[2], { clientX: 500, clientY: 330 });
+    expect(screen.getByRole("tooltip")).toHaveTextContent("Тренировка");
+
+    fireEvent.mouseEnter(workoutSegments[3], { clientX: 600, clientY: 330 });
+    expect(screen.getByRole("tooltip")).toHaveTextContent("Тренировка · 1 ч 20 мин");
+  });
+
+  it("renders day-chart-card inside day-detail-modal instead of the full timeline link", async () => {
+    installDashboard();
+
+    const { container } = render(
+      <MemoryRouter initialEntries={[`/day/${day.date}`]}>
+        <App />
+      </MemoryRouter>,
+    );
+
+    const modal = await screen.findByRole("dialog", { name: day.date });
+    expect(modal).toHaveClass("day-detail-modal");
+    expect(within(modal).getByRole("region", { name: "Общий график событий и показателей дня" })).toBeInTheDocument();
+    expect(within(modal).queryByText("Открыть полную хронологию дня")).not.toBeInTheDocument();
+    expect(container.querySelector(".day-detail-modal .day-chart-card")).toBeInTheDocument();
+
     dashboardStore.dashboard = null;
   });
 });

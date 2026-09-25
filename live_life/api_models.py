@@ -90,6 +90,12 @@ class EmaEventItem(BaseModel):
     )
     timestamp: AwareDatetime
     status: Status
+    mood: conint(ge=1, le=5) | None = None
+    energy: conint(ge=1, le=5) | None = None
+    focus: conint(ge=1, le=5) | None = None
+    stress: conint(ge=1, le=5) | None = None
+    activity: str | None = None
+    note: str | None = None
 
 
 class Perspective(StrEnum):
@@ -105,6 +111,10 @@ class RescueTimeItem(BaseModel):
     perspective: Perspective
     label: str
     seconds: confloat(ge=0.0)
+    productivityLevel: conint(ge=-2, le=2) | None = Field(
+        None,
+        description='RescueTime classification for an activity row, when available.',
+    )
 
 
 class BraceletSummary(BaseModel):

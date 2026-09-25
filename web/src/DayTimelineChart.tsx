@@ -6,6 +6,7 @@ import {
   type MouseEvent,
 } from "react";
 import { ListTodo } from "lucide-react";
+import { getEmaActivity } from "./const";
 import type { components } from "./generated/api-types";
 
 type Day = components["schemas"]["DashboardDay"];
@@ -16,6 +17,14 @@ type RecordItem = {
   detail: string;
   color: string;
   kind: string;
+};
+type EmaRecordItem = RecordItem & {
+  mood?: number;
+  energy?: number;
+  stress?: number;
+  focus?: number;
+  activity?: string;
+  note?: string;
 };
 type TodoistCluster = {
   timestamp: number;
@@ -32,21 +41,24 @@ function sortCopy<T>(items: T[], compare: (a: T, b: T) => number): T[] {
 }
 
 const WIDTH = 1240;
-const HEIGHT = 760;
+const HEIGHT = 804;
 const LEFT = 128;
 const RIGHT = 26;
 const HEART_TOP = 36;
 const HEART_BOTTOM = 264;
 const STEPS_TOP = 276;
 const STEPS_BOTTOM = 306;
-const ACTIVITY_TOP = 322;
-const PRODUCTIVITY_TOP = 384;
-const WELLTORY_TOP = 444;
-const WELLTORY_CENTER = 496;
-const EVENT_TOP = 562;
-const TODOIST_TOP = 610;
-const EMA_TOP = 658;
-const AXIS_Y = 710;
+const WORKOUTS_TOP = 320;
+const ACTIVITY_TOP = 366;
+const ACTIVITY_LANE_TOP = 386;
+const ACTIVITY_LANE_HEIGHT = 14;
+const WELLTORY_TOP = 488;
+const WELLTORY_CENTER = 540;
+const EVENT_TOP = 606;
+const TODOIST_TOP = 654;
+const EMA_TOP = 702;
+const EMA_CENTER_Y = 740;
+const AXIS_Y = 754;
 const PRODUCTIVITY_COLORS: Record<string, string> = {
   "-2": "#cf5c4f",
   "-1": "#db8b51",
@@ -61,6 +73,13 @@ const PRODUCTIVITY_NAMES: Record<string, string> = {
   "1": "Другая работа",
   "2": "Сосредоточенная работа",
 };
+const PRODUCTIVITY_LANES = [
+  { level: 2, label: "Фокус" },
+  { level: 1, label: "Работа" },
+  { level: 0, label: "Нейтр." },
+  { level: -1, label: "Личное" },
+  { level: -2, label: "Отвлеч." },
+];
 const EVENT_COLORS: Record<string, string> = {
   "todo-created": "#29915d",
   "todo-completed": "#4d82d8",
@@ -68,11 +87,13 @@ const EVENT_COLORS: Record<string, string> = {
   welltory: "#a75c91",
   metric: "#667f78",
   sleep: "#7779b9",
+  workout: "#7b5aa6",
   "ema-answered": "#35876b",
   "ema-pending": "#c39439",
   "ema-dismissed": "#b45c54",
   "ema-expired": "#87948e",
 };
+const WORKOUT_COLOR = "#7b5aa6";
 
 function buildHeartSeries(metrics: Metric[]) {
   const heart = metrics
@@ -102,6 +123,42 @@ function buildStepSeries(metrics: Metric[]) {
   const steps = [...buckets]
     .map(([time, value]) => ({ time, value }));
   return sortCopy(steps, (a, b) => a.time - b.time);
+}
+
+function formatWorkoutDuration(seconds: number): string {
+  if (seconds < 60) return `${Math.max(1, Math.round(seconds))} сек`;
+  const totalMinutes = Math.round(seconds / 60);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours > 0 && minutes > 0) return `${hours} ч ${minutes} мин`;
+  if (hours > 0) return `${hours} ч`;
+  return `${minutes} мин`;
+}
+
+function buildWorkoutSegments(metrics: Metric[]): RecordItem[] {
+  const workouts = metrics
+    .filter(
+      (point) =>
+        point.metric === "fitness_drive.exercise" && point.value != null,
+    )
+    .map((point) => {
+      const startMs = Date.parse(point.timestamp);
+      const rawSeconds = Number(point.value);
+      const seconds = Math.max(0, rawSeconds);
+      const endMs = startMs + seconds * 1000;
+      const durationText = seconds > 0 ? formatWorkoutDuration(seconds) : "";
+      const title = point.valueText?.trim() || "Тренировка";
+      const detail = durationText ? `${title} · ${durationText}` : title;
+      return {
+        start: startMs,
+        end: endMs,
+        label: title,
+        detail,
+        color: WORKOUT_COLOR,
+        kind: "workout",
+      };
+    });
+  return sortCopy(workouts, (a, b) => a.start - b.start);
 }
 
 function buildSleepBoundaries(
@@ -146,45 +203,51 @@ function buildSleepBoundaries(
   return { bedtime, wake, events };
 }
 
-function buildActivitySegments(items: RescueItem[]): RecordItem[] {
-  const buckets = new Map<number, RescueItem[]>();
-  for (const item of items.filter((entry) => entry.perspective === "activity")) {
-    const time = Date.parse(item.timestamp);
-    const bucket = buckets.get(time) ?? [];
-    bucket.push(item);
-    buckets.set(time, bucket);
-  }
-  const segments: RecordItem[] = [];
-  for (const [time, bucket] of buckets) {
-    let offset = 0;
-    for (const item of bucket) {
-      const from = time + offset * 1000;
-      const to = from + item.seconds * 1000;
-      segments.push({
-        start: from,
-        end: to,
-        label: item.label,
-        detail: `Активность · ${item.label}`,
-        color: activityColor(item.label),
-        kind: "activity",
-      });
-      offset += item.seconds;
+type ActivitySegment = RecordItem & { level: number | null; seconds: number };
+
+function buildActivitySegments(items: RescueItem[]): ActivitySegment[] {
+  const rows = sortCopy(
+    items.filter((item) => item.perspective === "activity" && item.seconds > 0),
+    (a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp),
+  );
+  const segments: ActivitySegment[] = [];
+  const lastByActivity = new Map<string, ActivitySegment>();
+  let bucketTime = Number.NaN;
+  let bucketOffset = 0;
+  for (const item of rows) {
+    const timestamp = Date.parse(item.timestamp);
+    if (timestamp !== bucketTime) {
+      bucketTime = timestamp;
+      bucketOffset = 0;
     }
+    const start = timestamp + bucketOffset * 1000;
+    const end = start + item.seconds * 1000;
+    bucketOffset += item.seconds;
+    const level = item.productivityLevel ?? null;
+    const key = `${item.label}\u0000${level}`;
+    const previous = lastByActivity.get(key);
+    // RescueTime reports five-minute buckets. Join a short untracked gap
+    // between consecutive buckets of the same activity and classification.
+    if (previous && start >= previous.start && start <= previous.end + 60_000) {
+      previous.end = Math.max(previous.end, end);
+      previous.seconds += item.seconds;
+      previous.detail = `${item.label} · ${level === null ? "категория недоступна" : PRODUCTIVITY_NAMES[level]} · ${formatWorkoutDuration(previous.seconds)}`;
+      continue;
+    }
+    const segment: ActivitySegment = {
+      start,
+      end,
+      label: item.label,
+      detail: `${item.label} · ${level === null ? "категория недоступна" : PRODUCTIVITY_NAMES[level]} · ${formatWorkoutDuration(item.seconds)}`,
+      color: PRODUCTIVITY_COLORS[String(level)] ?? "#789087",
+      kind: "activity",
+      level,
+      seconds: item.seconds,
+    };
+    segments.push(segment);
+    lastByActivity.set(key, segment);
   }
   return segments;
-}
-
-function buildProductivitySegments(items: RescueItem[]): RecordItem[] {
-  return items
-    .filter((item) => item.perspective === "productivity")
-    .map((item) => ({
-      start: Date.parse(item.timestamp),
-      end: Date.parse(item.timestamp) + item.seconds * 1000,
-      label: item.label,
-      detail: `Продуктивность · ${PRODUCTIVITY_NAMES[item.label] ?? item.label}`,
-      color: PRODUCTIVITY_COLORS[item.label] ?? "#789087",
-      kind: "productivity",
-    }));
 }
 
 function buildWelltoryMeasurements(
@@ -221,9 +284,9 @@ function buildWelltoryMeasurements(
 function buildTodoistRecords(day: Day): RecordItem[] {
   const records: RecordItem[] = [];
   const sources = [
-    { tasks: day.detail.createdTasks, kind: "todo-created", action: "создана" },
-    { tasks: day.detail.completedTasks, kind: "todo-completed", action: "закрыта" },
-    { tasks: day.detail.deletedTasks, kind: "todo-deleted", action: "удалена" },
+    { tasks: day.detail?.createdTasks ?? [], kind: "todo-created", action: "создана" },
+    { tasks: day.detail?.completedTasks ?? [], kind: "todo-completed", action: "закрыта" },
+    { tasks: day.detail?.deletedTasks ?? [], kind: "todo-deleted", action: "удалена" },
   ] as const;
   for (const source of sources) {
     for (const task of source.tasks) {
@@ -240,21 +303,43 @@ function buildTodoistRecords(day: Day): RecordItem[] {
   return records;
 }
 
-function buildEmaRecords(day: Day): RecordItem[] {
+function buildEmaRecords(day: Day): EmaRecordItem[] {
   const statuses: Record<string, string> = {
     pending: "ожидание ответа",
     answered: "ответ отправлен",
     dismissed: "отклонено",
     expired: "время ответа истекло",
   };
-  return day.detail.emaEvents.map((event) => ({
-    start: Date.parse(event.timestamp),
-    end: 0,
-    label: event.status,
-    detail: `EMA · ${statuses[event.status] ?? event.status}`,
-    color: EVENT_COLORS[`ema-${event.status}`],
-    kind: `ema-${event.status}`,
-  }));
+  return (day.detail?.emaEvents ?? [])
+    .filter((event) => event.status === "answered")
+    .map((event) => {
+      const parts = [`EMA · ${statuses[event.status] ?? event.status}`];
+      const metrics: string[] = [];
+      if (event.mood != null) metrics.push(`настроение: ${event.mood}/5`);
+      if (event.energy != null) metrics.push(`энергия: ${event.energy}/5`);
+      if (event.focus != null) metrics.push(`фокус: ${event.focus}/5`);
+      if (event.stress != null) metrics.push(`стресс: ${event.stress}/5`);
+      if (metrics.length > 0) parts.push(metrics.join(", "));
+      if (event.activity) {
+        const activityInfo = getEmaActivity(event.activity);
+        parts.push(`занятие: ${activityInfo.label}`);
+      }
+      if (event.note) parts.push(`заметка: ${event.note}`);
+      return {
+        start: Date.parse(event.timestamp),
+        end: 0,
+        label: event.status,
+        detail: parts.join(" · "),
+        color: EVENT_COLORS[`ema-${event.status}`] ?? EVENT_COLORS["ema-answered"],
+        kind: `ema-${event.status}`,
+        mood: event.mood,
+        energy: event.energy,
+        stress: event.stress,
+        focus: event.focus,
+        activity: event.activity,
+        note: event.note,
+      };
+    });
 }
 
 function buildMetricEvents(metrics: Metric[]): RecordItem[] {
@@ -358,22 +443,6 @@ function localLabel(timestamp: number, timezone: string): string {
   }).format(timestamp);
 }
 
-function activityColor(label: string): string {
-  let hash = 0;
-  for (const character of label)
-    hash = Math.trunc(hash * 31 + character.codePointAt(0)!);
-  const colors = [
-    "#407f70",
-    "#5e87b8",
-    "#b48a45",
-    "#9275a8",
-    "#c27156",
-    "#668d98",
-    "#849658",
-  ];
-  return colors[Math.abs(hash) % colors.length];
-}
-
 function metricText(point: Day["detail"]["welltoryMetrics"][number]): string {
   const value =
     point.value == null ? (point.valueText ?? "") : String(point.value);
@@ -430,6 +499,11 @@ export function DayTimelineChart({
   } | null>(null);
   const [axisVisible, setAxisVisible] = useState(true);
   const [chartScrollLeft, setChartScrollLeft] = useState(0);
+  const [axisFrame, setAxisFrame] = useState({ left: 0, width: 0, chartWidth: 0 });
+  const [cursorTime, setCursorTime] = useState<number | null>(null);
+  const chartScrollRef = useRef<HTMLDivElement>(null);
+  const chartRef = useRef<SVGSVGElement>(null);
+  const cursorClientXRef = useRef<number | null>(null);
   const timeAxisRef = useRef<SVGGElement>(null);
   const selectionRef = useRef<HTMLDivElement>(null);
   const selectionPointerRef = useRef<{ x: number; y: number } | null>(null);
@@ -442,6 +516,31 @@ export function DayTimelineChart({
     );
     observer.observe(axis);
     return () => observer.disconnect();
+  }, []);
+  useLayoutEffect(() => {
+    const scroll = chartScrollRef.current;
+    const chart = chartRef.current;
+    if (!scroll || !chart) return;
+    const measure = () => {
+      const scrollRect = scroll.getBoundingClientRect();
+      const chartRect = chart.getBoundingClientRect();
+      setAxisFrame((current) =>
+        current.left === scrollRect.left &&
+        current.width === scrollRect.width &&
+        current.chartWidth === chartRect.width
+          ? current
+          : { left: scrollRect.left, width: scrollRect.width, chartWidth: chartRect.width },
+      );
+    };
+    measure();
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
+    observer?.observe(scroll);
+    observer?.observe(chart);
+    window.addEventListener("resize", measure);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", measure);
+    };
   }, []);
   const selectAtCursor = (item: RecordItem, event: MouseEvent<Element>) => {
     selectionPointerRef.current = { x: event.clientX, y: event.clientY };
@@ -467,14 +566,12 @@ export function DayTimelineChart({
     selectionPointerRef.current = null;
     setSelected(null);
   };
-  const metrics = day.detail.braceletMetrics;
+  const metrics = day.detail?.braceletMetrics ?? [];
   const heart = buildHeartSeries(metrics);
   const stepSeries = buildStepSeries(metrics);
-  const activity = day.detail.rescueTime.filter(
+  const rescueTime = day.detail?.rescueTime ?? [];
+  const activity = rescueTime.filter(
     (item) => item.perspective === "activity",
-  );
-  const productivity = day.detail.rescueTime.filter(
-    (item) => item.perspective === "productivity",
   );
   const maxStepCount = Math.max(1, ...stepSeries.map((item) => item.value));
   const start = zonedTimestamp(day.date, 5, timezone);
@@ -482,6 +579,19 @@ export function DayTimelineChart({
   const plotWidth = WIDTH - LEFT - RIGHT;
   const x = (time: number) =>
     LEFT + ((time - start) / (end - start)) * plotWidth;
+  const updateCursor = (clientX: number) => {
+    cursorClientXRef.current = clientX;
+    const bounds = chartRef.current?.getBoundingClientRect();
+    if (!bounds?.width) return;
+    const pointerX = ((clientX - bounds.left) / bounds.width) * WIDTH;
+    const fraction = Math.max(0, Math.min(1, (pointerX - LEFT) / plotWidth));
+    const minute = Math.round((fraction * (end - start)) / 60_000);
+    setCursorTime(start + minute * 60_000);
+  };
+  const cursorX = cursorTime === null ? null : x(cursorTime);
+  const cursorLabelX = cursorX === null
+    ? null
+    : Math.max(LEFT, Math.min(WIDTH - RIGHT - 52, cursorX - 26));
   const heartValueList = heart.map((item) => item.value);
   const heartValues = sortCopy(heartValueList, (a, b) => a - b);
   const low = heartValues.length
@@ -519,10 +629,10 @@ export function DayTimelineChart({
   const hoverBoxX = Math.max(LEFT, Math.min(WIDTH - RIGHT - 112, hoverX - 56));
   const hoverBoxY = Math.max(HEART_TOP + 3, hoverY - 44);
 
-  const activitySegments = buildActivitySegments(day.detail.rescueTime);
-  const productivitySegments = buildProductivitySegments(day.detail.rescueTime);
+  const activitySegments = buildActivitySegments(rescueTime);
+  const workoutSegments = buildWorkoutSegments(metrics);
   const welltoryMeasurements = buildWelltoryMeasurements(
-    day.detail.welltoryMetrics,
+    day.detail?.welltoryMetrics ?? [],
     start,
     end,
   );
@@ -538,6 +648,9 @@ export function DayTimelineChart({
   const hasBedtimeInLogicalDay = bedtime !== null;
   const hasWakeInLogicalDay = wake !== null;
   const eventRecords = [...buildMetricEvents(metrics), ...sleepBoundaries.events];
+  const visibleWorkoutSegments = workoutSegments.filter(
+    (item) => item.end > start && item.start < end,
+  );
   const visibleEvents = eventRecords.filter(
     (item) => item.start >= start && item.start <= end,
   );
@@ -567,6 +680,36 @@ export function DayTimelineChart({
     tick += tickEvery
   ) ticks.push(tick);
   const markers = new Map<string, number>();
+  const timeAxisContent = (
+    <>
+      <line
+        x1={LEFT}
+        x2={WIDTH - RIGHT}
+        y1={AXIS_Y}
+        y2={AXIS_Y}
+        className="chart-axis"
+      />
+      {ticks.map((tick) => (
+        <text
+          key={tick}
+          x={x(tick)}
+          y={AXIS_Y + 20}
+          textAnchor="middle"
+          className="chart-tick"
+        >
+          {localLabel(tick, timezone)}
+        </text>
+      ))}
+      {cursorX !== null && cursorLabelX !== null && (
+        <g className="chart-cursor-time">
+          <rect x={cursorLabelX} y={AXIS_Y + 5} width="52" height="20" rx="4" />
+          <text x={cursorLabelX + 26} y={AXIS_Y + 19} textAnchor="middle">
+            {localLabel(cursorTime!, timezone)}
+          </text>
+        </g>
+      )}
+    </>
+  );
 
   return (
     <section
@@ -579,20 +722,31 @@ export function DayTimelineChart({
         </div>
       </div>
       <div
+        ref={chartScrollRef}
         className="day-chart-scroll"
-        onScroll={(event) => setChartScrollLeft(event.currentTarget.scrollLeft)}
-        onMouseLeave={clearSelection}
+        onScroll={(event) => {
+          setChartScrollLeft(event.currentTarget.scrollLeft);
+          if (cursorClientXRef.current !== null) updateCursor(cursorClientXRef.current);
+        }}
+        onMouseEnter={(event) => updateCursor(event.clientX)}
+        onMouseLeave={() => {
+          cursorClientXRef.current = null;
+          setCursorTime(null);
+          clearSelection();
+        }}
         onMouseMove={(event) => {
+          updateCursor(event.clientX);
           const target = event.target as Element;
           if (
             !target.closest(
-              ".chart-step-hit-area, .chart-step-bar, .chart-duration-segment, .chart-event-dot, .chart-sleep-boundary, .welltory-measurement, .todoist-marker",
+              ".chart-step-hit-area, .chart-step-bar, .chart-duration-segment, .chart-event-dot, .chart-sleep-boundary, .welltory-measurement, .todoist-marker, .ema-speedometer, .ema-activity-marker",
             )
           )
             clearSelection();
         }}
       >
         <svg
+          ref={chartRef}
           className="day-chart"
           viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
           role="img"
@@ -639,12 +793,15 @@ export function DayTimelineChart({
           <text x="18" y={STEPS_TOP + 19} className="chart-lane-label">
             ШАГИ
           </text>
-          <text x="18" y={ACTIVITY_TOP + 15} className="chart-lane-label">
+          <text x="18" y={WORKOUTS_TOP + 16} className="chart-lane-label">
+            ТРЕНИРОВКИ
+          </text>
+          <text x="18" y={ACTIVITY_TOP + 8} className="chart-lane-label">
             АКТИВНОСТЬ
           </text>
-          <text x="18" y={PRODUCTIVITY_TOP + 15} className="chart-lane-label">
-            ПРОДУКТИВНОСТЬ
-          </text>
+          {PRODUCTIVITY_LANES.map(({ level, label }, index) => (
+            <text key={level} x="18" y={ACTIVITY_LANE_TOP + index * ACTIVITY_LANE_HEIGHT + 9} className="chart-activity-lane-label">{label}</text>
+          ))}
           <text x="18" y={WELLTORY_TOP + 13} className="chart-lane-label">
             WELLTORY
           </text>
@@ -821,46 +978,48 @@ export function DayTimelineChart({
               );
             })}
 
-          {activitySegments
-            .filter((item) => item.end > start && item.start < end)
-            .map((item, index) => (
+          {visibleWorkoutSegments.map((item) => {
+            const from = Math.max(start, item.start);
+            const to = Math.min(end, item.end);
+            return (
               <rect
-                key={`activity-${item.start}:${item.end}:${item.label}`}
-                x={x(Math.max(start, item.start))}
-                y={ACTIVITY_TOP + 2}
-                width={Math.max(
-                  1,
-                  x(Math.min(end, item.end)) - x(Math.max(start, item.start)),
-                )}
-                height="22"
+                key={`workout-${item.start}:${item.end}:${item.label}`}
+                x={x(from)}
+                y={WORKOUTS_TOP + 2}
+                width={Math.max(4, x(to) - x(from))}
+                height="18"
                 rx="3"
                 fill={item.color}
-                className="chart-duration-segment"
+                className="chart-duration-segment chart-workout-segment"
                 onClick={(event) => selectAtCursor(item, event)}
                 onMouseEnter={(event) => selectAtCursor(item, event)}
                 onMouseMove={(event) => selectAtCursor(item, event)}
               />
-            ))}
-          {productivitySegments
+            );
+          })}
+
+          {activitySegments
             .filter((item) => item.end > start && item.start < end)
-            .map((item, index) => {
-              const lane = Math.max(0, Math.min(4, 2 - Number(item.label)));
+            .map((item) => {
+              const lane = item.level === null ? 2 : 2 - item.level;
               const from = Math.max(start, item.start);
               const to = Math.min(end, item.end);
+              const width = Math.max(1, x(to) - x(from));
               return (
-                <rect
-                  key={`productivity-${item.start}:${item.end}:${item.label}`}
-                  x={x(from)}
-                  y={PRODUCTIVITY_TOP + lane * 8}
-                  width={Math.max(1, x(to) - x(from))}
-                  height="7"
-                  rx="2"
-                  fill={item.color}
-                  className="chart-duration-segment"
-                  onClick={(event) => selectAtCursor(item, event)}
-                  onMouseEnter={(event) => selectAtCursor(item, event)}
-                  onMouseMove={(event) => selectAtCursor(item, event)}
-                />
+                <g key={`activity-${item.start}:${item.end}:${item.label}:${item.level}`}>
+                  <rect
+                    x={x(from)} y={ACTIVITY_LANE_TOP + lane * ACTIVITY_LANE_HEIGHT}
+                    width={width} height="11" rx="2" fill={item.color}
+                    className="chart-duration-segment chart-activity-segment"
+                    aria-label={item.detail}
+                    onClick={(event) => selectAtCursor(item, event)}
+                    onMouseEnter={(event) => selectAtCursor(item, event)}
+                    onMouseMove={(event) => selectAtCursor(item, event)}
+                  />
+                  {width > item.label.length * 5.5 + 8 && (
+                    <text x={x(from) + 4} y={ACTIVITY_LANE_TOP + lane * ACTIVITY_LANE_HEIGHT + 8} className="chart-activity-name">{item.label}</text>
+                  )}
+                </g>
               );
             })}
           <WelltoryTrack
@@ -874,7 +1033,7 @@ export function DayTimelineChart({
             const markerKey = `${item.start}:${item.kind}`;
             const stack = markers.get(markerKey) ?? 0;
             markers.set(markerKey, stack + 1);
-            const cy = EVENT_TOP + 9 + (stack % 3) * 13;
+            const cy = EVENT_TOP + 34 + (stack % 2) * 11;
             return (
               <circle
                 key={`event-${item.start}:${item.kind}:${item.label}:${item.detail}`}
@@ -889,6 +1048,42 @@ export function DayTimelineChart({
               />
             );
           })}
+          {visibleEmaEvents
+            .filter((item) => Boolean(item.activity))
+            .map((item) => {
+              const activityInfo = getEmaActivity(item.activity);
+              const ActivityIcon = activityInfo.icon;
+              const detailParts = [`EMA · ${activityInfo.label}`];
+              if (item.note) detailParts.push(`заметка: ${item.note}`);
+              const activityRecord: RecordItem = {
+                start: item.start,
+                end: 0,
+                label: activityInfo.label,
+                detail: detailParts.join(" · "),
+                color: "#245c4b",
+                kind: "ema-activity",
+              };
+              return (
+                <foreignObject
+                  key={`ema-activity-${item.start}:${item.activity}`}
+                  x={x(item.start) - 12}
+                  y={EVENT_TOP + 2}
+                  width="24"
+                  height="24"
+                >
+                  <button
+                    type="button"
+                    className="ema-activity-marker"
+                    aria-label={`EMA · ${activityInfo.label}`}
+                    onClick={(event) => selectAtCursor(activityRecord, event)}
+                    onMouseEnter={(event) => selectAtCursor(activityRecord, event)}
+                    onMouseMove={(event) => selectAtCursor(activityRecord, event)}
+                  >
+                    <ActivityIcon size={15} strokeWidth={2.2} aria-hidden="true" />
+                  </button>
+                </foreignObject>
+              );
+            })}
           {todoistClusters.map((cluster, index) => {
             const description = cluster.events
               .map(
@@ -940,65 +1135,38 @@ export function DayTimelineChart({
               </foreignObject>
             );
           })}
-          {visibleEmaEvents.map((item, index) => (
-            <circle
+          {visibleEmaEvents.map((item) => (
+            <EmaSpeedometer
               key={`ema-${item.start}:${item.kind}:${item.label}`}
+              item={item}
               cx={x(item.start)}
-              cy={EMA_TOP + 9 + (index % 3) * 12}
-              r="5"
-              fill={item.color}
-              className="chart-event-dot"
-              onClick={(event) => selectAtCursor(item, event)}
-              onMouseEnter={(event) => selectAtCursor(item, event)}
-              onMouseMove={(event) => selectAtCursor(item, event)}
+              cy={EMA_CENTER_Y}
+              onSelect={selectAtCursor}
             />
           ))}
-          <g ref={timeAxisRef} className="chart-time-axis">
+          {cursorX !== null && (
             <line
-              x1={LEFT}
-              x2={WIDTH - RIGHT}
-              y1={AXIS_Y}
-              y2={AXIS_Y}
-              className="chart-axis"
+              x1={cursorX} x2={cursorX} y1={HEART_TOP} y2={AXIS_Y}
+              className="chart-cursor-line"
             />
-            {ticks.map((tick) => (
-              <text
-                key={tick}
-                x={x(tick)}
-                y={AXIS_Y + 20}
-                textAnchor="middle"
-                className="chart-tick"
-              >
-                {localLabel(tick, timezone)}
-              </text>
-            ))}
+          )}
+          <g ref={timeAxisRef} className="chart-time-axis">
+            {timeAxisContent}
           </g>
         </svg>
       </div>
       {!axisVisible && (
-        <div className="chart-axis-sticky" aria-hidden="true">
+        <div
+          className="chart-axis-sticky"
+          aria-hidden="true"
+          style={{ left: axisFrame.left, width: axisFrame.width }}
+        >
           <svg
             viewBox={`0 ${AXIS_Y - 10} ${WIDTH} 50`}
-            style={{ transform: `translateX(-${chartScrollLeft}px)` }}
+            preserveAspectRatio="none"
+            style={{ width: axisFrame.chartWidth, transform: `translateX(-${chartScrollLeft}px)` }}
           >
-            <line
-              x1={LEFT}
-              x2={WIDTH - RIGHT}
-              y1={AXIS_Y}
-              y2={AXIS_Y}
-              className="chart-axis"
-            />
-            {ticks.map((tick) => (
-              <text
-                key={tick}
-                x={x(tick)}
-                y={AXIS_Y + 20}
-                textAnchor="middle"
-                className="chart-tick"
-              >
-                {localLabel(tick, timezone)}
-              </text>
-            ))}
+            {timeAxisContent}
           </svg>
         </div>
       )}
@@ -1014,8 +1182,9 @@ export function DayTimelineChart({
         </div>
       )}
       {!heart.length &&
+        !stepSeries.length &&
+        !workoutSegments.length &&
         !activity.length &&
-        !productivity.length &&
         !welltoryMeasurements.length &&
         !visibleEvents.length &&
         !visibleTodoistEvents.length &&
@@ -1155,6 +1324,68 @@ function WelltoryTrack({
           </g>
         );
       })}
+    </g>
+  );
+}
+
+type EmaSpeedometerProps = Readonly<{
+  item: EmaRecordItem;
+  cx: number;
+  cy: number;
+  onSelect: (item: RecordItem, event: MouseEvent<Element>) => void;
+}>;
+
+function EmaSpeedometer({ item, cx, cy, onSelect }: EmaSpeedometerProps) {
+  const tracks = [
+    { name: "mood", radius: 20, value: item.mood, color: "#3b82f6" },
+    { name: "energy", radius: 14, value: item.energy, color: "#2e9e6b" },
+    { name: "stress", radius: 8, value: item.stress, color: "#e47b4f" },
+  ];
+  return (
+    <g
+      className="ema-speedometer"
+      data-testid="ema-speedometer"
+      onClick={(event) => onSelect(item, event)}
+      onMouseEnter={(event) => onSelect(item, event)}
+      onMouseMove={(event) => onSelect(item, event)}
+    >
+      <rect
+        x={cx - 24}
+        y={cy - 24}
+        width={48}
+        height={28}
+        className="ema-gauge-hit-area"
+      />
+      {tracks.map(({ name, radius, value, color }) => {
+        const arcLength = Math.PI * radius;
+        const d = `M ${cx - radius} ${cy} A ${radius} ${radius} 0 0 1 ${cx + radius} ${cy}`;
+        const ratio = value != null ? Math.max(0, Math.min(1, value / 5)) : 0;
+        const filledLength = ratio * arcLength;
+        return (
+          <g key={name} className={`ema-track-${name}`}>
+            <path
+              d={d}
+              fill="none"
+              stroke="#e2ebe6"
+              strokeWidth={2.5}
+              strokeLinecap="round"
+              className="ema-track-bg"
+            />
+            {ratio > 0 && (
+              <path
+                d={d}
+                fill="none"
+                stroke={color}
+                strokeWidth={2.5}
+                strokeLinecap="round"
+                strokeDasharray={`${filledLength} ${arcLength}`}
+                className="ema-track-value"
+              />
+            )}
+          </g>
+        );
+      })}
+      <circle cx={cx} cy={cy} r={2} fill="#8ea499" className="ema-pivot-dot" />
     </g>
   );
 }

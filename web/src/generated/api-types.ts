@@ -128,6 +128,12 @@ export interface components {
             timestamp: string;
             /** @enum {string} */
             status: "pending" | "answered" | "dismissed" | "expired";
+            mood?: number;
+            energy?: number;
+            focus?: number;
+            stress?: number;
+            activity?: string;
+            note?: string;
         };
         RescueTimeItem: {
             /** Format: date-time */
@@ -136,6 +142,8 @@ export interface components {
             perspective: "activity" | "productivity";
             label: string;
             seconds: number;
+            /** @description RescueTime classification for an activity row, when available. */
+            productivityLevel?: number;
         };
         BraceletSummary: {
             sleepSeconds: number | null;

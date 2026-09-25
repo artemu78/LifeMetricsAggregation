@@ -482,10 +482,14 @@ function DayModal({
       }
     },
   );
-  const sleep = day.detail.braceletMetrics.filter((point) =>
+  const nextDateValue = new Date(`${day.date}T00:00:00Z`);
+  nextDateValue.setUTCDate(nextDateValue.getUTCDate() + 1);
+  const nextCalendarDate = `${nextDateValue.getUTCFullYear()}-${String(nextDateValue.getUTCMonth() + 1).padStart(2, "0")}-${String(nextDateValue.getUTCDate()).padStart(2, "0")}`;
+  const nextDay = store.dashboard?.days.find((item) => item.date === nextCalendarDate);
+  const sleep = (day.detail?.braceletMetrics ?? []).filter((point) =>
     point.metric.startsWith("fitness_drive.sleep."),
   );
-  const rescueOverview = buildRescueTimeOverview(day.detail.rescueTime);
+  const rescueOverview = buildRescueTimeOverview(day.detail?.rescueTime ?? []);
   const rescueIntervals = [...rescueOverview.activityRecords].sort(
     (left, right) => left.timestamp.localeCompare(right.timestamp),
   );
@@ -532,9 +536,11 @@ function DayModal({
           ))}
         </div>
 
-        <Link className="timeline-link" to={`/timeline/${day.date}`}>
-          Открыть полную хронологию дня <ChevronRight aria-hidden="true" />
-        </Link>
+        <DayTimelineChart
+          day={day}
+          timezone={timezone}
+          nextDaySleepMetrics={nextDay?.detail?.braceletMetrics}
+        />
 
         <div className="detail-grid">
           <section className="panel">

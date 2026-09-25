@@ -29,7 +29,13 @@ CREATE TABLE IF NOT EXISTS ema_events (
     scheduled_at TEXT NOT NULL,
     answered_at TEXT,
     status TEXT NOT NULL,
-    origin_file TEXT
+    origin_file TEXT,
+    mood INTEGER,
+    energy INTEGER,
+    focus INTEGER,
+    stress INTEGER,
+    activity TEXT,
+    note TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_ema_scheduled_at ON ema_events(scheduled_at);
 
@@ -117,6 +123,12 @@ def _migrate(conn: sqlite3.Connection) -> None:
     _ensure_column(conn, "import_files", "remote_modified_at", "TEXT")
     _ensure_column(conn, "import_files", "remote_status", "TEXT NOT NULL DEFAULT 'available'")
     _ensure_column(conn, "import_files", "last_seen_at", "TEXT")
+    _ensure_column(conn, "ema_events", "mood", "INTEGER")
+    _ensure_column(conn, "ema_events", "energy", "INTEGER")
+    _ensure_column(conn, "ema_events", "focus", "INTEGER")
+    _ensure_column(conn, "ema_events", "stress", "INTEGER")
+    _ensure_column(conn, "ema_events", "activity", "TEXT")
+    _ensure_column(conn, "ema_events", "note", "TEXT")
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_metric_origin_file ON metric_events(origin_file)"
     )

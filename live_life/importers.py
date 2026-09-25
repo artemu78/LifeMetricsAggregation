@@ -30,6 +30,12 @@ UNITS = {
     "LF": "ms2",
     "VLF": "ms2",
 }
+EMA_DETAILS_BACKFILL_VERSION = 1
+
+
+def _ema_rating(value: object) -> int | None:
+    """Keep only valid EMA ratings; malformed optional answers remain unavailable."""
+    return value if type(value) is int and 1 <= value <= 5 else None
 
 
 def _file_hash(path: Path) -> str:
@@ -288,6 +294,11 @@ def import_fitness_drive(config: Config) -> dict[str, object]:
             """
         ).fetchone()["count"]
 
+        missing_ema_details = (
+            conn.execute("PRAGMA user_version").fetchone()[0]
+            < EMA_DETAILS_BACKFILL_VERSION
+        )
+
     changed_paths = paths if legacy_rows > 0 else [
         path for path in paths
         if previous_hashes.get(path.resolve()) != path_hashes[path.resolve()]
@@ -300,12 +311,29 @@ def import_fitness_drive(config: Config) -> dict[str, object]:
         legacy_rows > 0
         or legacy_heart_rate_ids > 0
         or full_record_payloads > 0
+        or missing_ema_details
         or bool(changed_paths)
     )
     selected = paths if rebuild else []
 
     staged: dict[Path, list[tuple[str, str, str, float, str, dict]]] = {}
-    staged_ema: dict[Path, list[tuple[str, str, str | None, str]]] = {}
+    staged_ema: dict[
+        Path,
+        list[
+            tuple[
+                str,
+                str,
+                str | None,
+                str,
+                int | None,
+                int | None,
+                int | None,
+                int | None,
+                str | None,
+                str | None,
+            ]
+        ],
+    ] = {}
     file_ranks: dict[Path, tuple[str, int, str]] = {}
     records = 0
     affected_dates: set[str] = set()
@@ -319,7 +347,20 @@ def import_fitness_drive(config: Config) -> dict[str, object]:
             path.name,
         )
         remote_id = file_meta.get("remote_id") or path.name.split("--", 1)[0]
-        staged_ema_rows: list[tuple[str, str, str | None, str]] = []
+        staged_ema_rows: list[
+            tuple[
+                str,
+                str,
+                str | None,
+                str,
+                int | None,
+                int | None,
+                int | None,
+                int | None,
+                str | None,
+                str | None,
+            ]
+        ] = []
         for document in _fitness_documents(path):
             batch, document_records, ema_events = _fitness_batch(document)
             header = batch.get("header", {})
@@ -378,12 +419,24 @@ def import_fitness_drive(config: Config) -> dict[str, object]:
                 }:
                     raise ValueError(f"Invalid EMA event in {path.name}")
                 answered_at = event.get("answeredAt")
+                mood = event.get("mood") if status == "answered" else None
+                energy = event.get("energy") if status == "answered" else None
+                focus = event.get("focus") if status == "answered" else None
+                stress = event.get("stress") if status == "answered" else None
+                activity = event.get("activity") if status == "answered" else None
+                note = event.get("note") if status == "answered" else None
                 staged_ema_rows.append(
                     (
                         str(event_id),
                         _as_utc_iso(scheduled_at, config.timezone),
                         _as_utc_iso(answered_at, config.timezone) if answered_at else None,
                         status,
+                        _ema_rating(mood),
+                        _ema_rating(energy),
+                        _ema_rating(focus),
+                        _ema_rating(stress),
+                        str(activity) if activity is not None else None,
+                        str(note) if note is not None else None,
                     )
                 )
         staged[path.resolve()] = staged_rows
@@ -419,12 +472,36 @@ def import_fitness_drive(config: Config) -> dict[str, object]:
                     metrics += 1
             if not rebuild:
                 conn.execute("DELETE FROM ema_events WHERE origin_file = ?", (str(path),))
-            for event_id, scheduled_at, answered_at, status in staged_ema[path]:
+            for (
+                event_id,
+                scheduled_at,
+                answered_at,
+                status,
+                mood,
+                energy,
+                focus,
+                stress,
+                activity,
+                note,
+            ) in staged_ema[path]:
                 conn.execute(
                     """INSERT OR IGNORE INTO ema_events
-                    (event_id, scheduled_at, answered_at, status, origin_file)
-                    VALUES (?, ?, ?, ?, ?)""",
-                    (event_id, scheduled_at, answered_at, status, str(path)),
+                    (event_id, scheduled_at, answered_at, status, origin_file,
+                     mood, energy, focus, stress, activity, note)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        event_id,
+                        scheduled_at,
+                        answered_at,
+                        status,
+                        str(path),
+                        mood,
+                        energy,
+                        focus,
+                        stress,
+                        activity,
+                        note,
+                    ),
                 )
             file_meta = manifest.get(path.name, {})
             conn.execute(
@@ -467,6 +544,8 @@ def import_fitness_drive(config: Config) -> dict[str, object]:
                     str((config.fitness_drive_cache / local_name).resolve()),
                 ),
             )
+        if missing_ema_details:
+            conn.execute(f"PRAGMA user_version = {EMA_DETAILS_BACKFILL_VERSION}")
     return {
         "files": files,
         "records": records,

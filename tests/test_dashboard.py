@@ -235,6 +235,112 @@ class DashboardTest(unittest.TestCase):
             if metric.startswith("fitness_drive.sleep."):
                 self.assertNotIn("stages", payload)
 
+    def test_ema_events_preserve_ratings_and_rebuild(self):
+        file_path = self.cache / "drive-ema--day.json"
+        file_path.write_text(
+            json.dumps(
+                {
+                    "header": {"schemaVersion": 1, "recordCount": 0},
+                    "records": [],
+                    "emaEvents": [
+                        {
+                            "schemaVersion": 1,
+                            "id": "test-ema-1",
+                            "scheduleDate": "2026-09-10",
+                            "scheduledAt": "2026-09-10T12:00:00Z",
+                            "answeredAt": "2026-09-10T12:01:00Z",
+                            "status": "answered",
+                            "mood": 4,
+                            "energy": 3,
+                            "focus": 2,
+                            "stress": 1,
+                            "activity": "work_coding",
+                            "activityLabel": "Work / coding",
+                            "note": "deep focus",
+                            "timezone": "Europe/Moscow",
+                        }
+                    ],
+                }
+            )
+        )
+        import_fitness_drive(self.config)
+        with connect(self.config.database) as conn:
+            row = conn.execute("SELECT * FROM ema_events WHERE event_id = 'test-ema-1'").fetchone()
+            self.assertEqual(row["mood"], 4)
+            self.assertEqual(row["energy"], 3)
+            self.assertEqual(row["focus"], 2)
+            self.assertEqual(row["stress"], 1)
+            self.assertEqual(row["activity"], "work_coding")
+            self.assertEqual(row["note"], "deep focus")
+            # Verify activity_label and payload_json columns do not exist
+            columns = {col["name"] for col in conn.execute("PRAGMA table_info(ema_events)")}
+            self.assertNotIn("activity_label", columns)
+            self.assertNotIn("payload_json", columns)
+
+        dashboard = build_dashboard(self.config, date(2026, 9, 10), date(2026, 9, 10))
+        ema_items = dashboard["days"][0]["detail"]["emaEvents"]
+        self.assertEqual(len(ema_items), 1)
+        self.assertEqual(ema_items[0]["status"], "answered")
+        self.assertEqual(ema_items[0]["mood"], 4)
+        self.assertEqual(ema_items[0]["energy"], 3)
+        self.assertEqual(ema_items[0]["focus"], 2)
+        self.assertEqual(ema_items[0]["stress"], 1)
+        self.assertEqual(ema_items[0]["activity"], "work_coding")
+        self.assertEqual(ema_items[0]["note"], "deep focus")
+
+        self.assertFalse(import_fitness_drive(self.config)["rebuild"])
+
+        # Simulate a database created before the EMA detail backfill.
+        with connect(self.config.database) as conn:
+            conn.execute("UPDATE ema_events SET mood = NULL WHERE event_id = 'test-ema-1'")
+            conn.execute("PRAGMA user_version = 0")
+        self.assertTrue(import_fitness_drive(self.config)["rebuild"])
+        with connect(self.config.database) as conn:
+            row = conn.execute("SELECT mood FROM ema_events WHERE event_id = 'test-ema-1'").fetchone()
+            self.assertEqual(row["mood"], 4)
+            self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0], 1)
+        self.assertFalse(import_fitness_drive(self.config)["rebuild"])
+
+    def test_ema_invalid_ratings_are_ignored_without_repeated_rebuilds(self):
+        (self.cache / "drive-ema--invalid.json").write_text(
+            json.dumps(
+                {
+                    "header": {"schemaVersion": 1, "recordCount": 0},
+                    "records": [],
+                    "emaEvents": [
+                        {
+                            "id": "invalid-ratings",
+                            "scheduledAt": "2026-09-10T12:00:00Z",
+                            "status": "answered",
+                            "mood": "abc",
+                            "energy": 4.7,
+                            "focus": True,
+                            "stress": 6,
+                        },
+                        {
+                            "id": "valid-and-missing-ratings",
+                            "scheduledAt": "2026-09-10T13:00:00Z",
+                            "status": "answered",
+                            "mood": None,
+                            "energy": 0,
+                            "focus": 1,
+                            "stress": 5,
+                        },
+                    ],
+                }
+            )
+        )
+        self.assertTrue(import_fitness_drive(self.config)["rebuild"])
+        with connect(self.config.database) as conn:
+            rows = conn.execute(
+                "SELECT event_id, mood, energy, focus, stress FROM ema_events ORDER BY event_id"
+            ).fetchall()
+            self.assertEqual(tuple(rows[0]), ("invalid-ratings", None, None, None, None))
+            self.assertEqual(tuple(rows[1]), ("valid-and-missing-ratings", None, None, 1, 5))
+        dashboard = build_dashboard(self.config, date(2026, 9, 10), date(2026, 9, 10))
+        DashboardResponse.model_validate(dashboard)
+        self.assertFalse(import_fitness_drive(self.config)["rebuild"])
+
     def test_overlapping_fitness_files_deduplicate_and_exclude_awake_seconds(self):
         file1 = self.cache / "sync-file-1.json"
         file2 = self.cache / "backfill-file-2.json"
