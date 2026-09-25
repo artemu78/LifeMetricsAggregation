@@ -39,6 +39,17 @@ describe('SleepStagesChart', () => {
     expect(intervals[3].phase).toBe('rem')
   })
 
+  it('adjusts overlapping intervals so durationSec matches clipped geometry without 60s minimum', () => {
+    const metrics = [
+      { timestamp: '2026-09-15T01:00:00Z', metric: 'fitness_drive.sleep.deep_seconds', value: 30 },
+      { timestamp: '2026-09-15T01:00:15Z', metric: 'fitness_drive.sleep.light_seconds', value: 100 },
+    ]
+    const intervals = extractSleepIntervals(metrics)
+    expect(intervals).toHaveLength(2)
+    expect(intervals[0].end).toBe(Date.parse('2026-09-15T01:00:15Z'))
+    expect(intervals[0].durationSec).toBe(15)
+  })
+
   it('renders all phases on Y axis and SVG elements', () => {
     const metrics = [
       { timestamp: '2026-09-15T01:00:00Z', metric: 'fitness_drive.sleep.deep_seconds', value: 7200 },
@@ -96,6 +107,38 @@ describe('SleepStagesChart', () => {
     expect(container.querySelector('.sleep-hover-indicator')).toBeInTheDocument()
 
     fireEvent.pointerLeave(svg)
+    expect(container.querySelector('.sleep-hover-indicator')).not.toBeInTheDocument()
+  })
+
+  it('clears hover indicator when pointer is in a gap between intervals', () => {
+    // 01:00 to 02:00, then gap, then 05:00 to 06:00
+    const metrics = [
+      { timestamp: '2026-09-15T01:00:00Z', metric: 'fitness_drive.sleep.deep_seconds', value: 3600 },
+      { timestamp: '2026-09-15T05:00:00Z', metric: 'fitness_drive.sleep.light_seconds', value: 3600 },
+    ]
+    const { container } = render(
+      <SleepStagesChart sleepMetrics={metrics} timezone="Europe/Moscow" />,
+    )
+
+    const svg = container.querySelector('svg.sleep-chart-svg')!
+    svg.getBoundingClientRect = () => ({
+      left: 0,
+      top: 0,
+      width: 800,
+      height: 180,
+      right: 800,
+      bottom: 180,
+      x: 0,
+      y: 0,
+      toJSON: () => {},
+    })
+
+    // Pointer move in the first interval
+    fireEvent.pointerMove(svg, { clientX: 100 })
+    expect(container.querySelector('.sleep-hover-indicator')).toBeInTheDocument()
+
+    // Pointer move in the gap (midway around clientX = 400)
+    fireEvent.pointerMove(svg, { clientX: 400 })
     expect(container.querySelector('.sleep-hover-indicator')).not.toBeInTheDocument()
   })
 })

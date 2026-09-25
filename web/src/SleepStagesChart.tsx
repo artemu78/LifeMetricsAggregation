@@ -72,7 +72,7 @@ function resolveOverlappingIntervals(intervals: SleepInterval[]): SleepInterval[
     if (curr.end > next.start) {
       curr.end = next.start;
       curr.durationSec = Math.max(
-        60,
+        0,
         Math.round((curr.end - curr.start) / 1000),
       );
     }
@@ -250,9 +250,13 @@ export function SleepStagesChart({
     }
     const hoverTime =
       minTime + ((svgX - LEFT) / PLOT_WIDTH) * (maxTime - minTime);
-    const match =
-      intervals.find((int) => hoverTime >= int.start && hoverTime <= int.end) ??
-      intervals.at(-1)!;
+    const match = intervals.find(
+      (int) => hoverTime >= int.start && hoverTime <= int.end,
+    );
+    if (!match) {
+      setHoverInfo(null);
+      return;
+    }
 
     const config =
       SLEEP_PHASES.find((p) => p.key === match.phase) ?? SLEEP_PHASES[2];
