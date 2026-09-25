@@ -600,13 +600,6 @@ function DayModal({
         <div className="charts">
           <MetricChart
             day={day}
-            metric="fitness_drive.heart_rate"
-            color="#cf5c4f"
-            title="Пульс"
-            timezone={timezone}
-          />
-          <MetricChart
-            day={day}
             metric="fitness_drive.oxygen_saturation"
             color="#3388a4"
             title="Кислород"

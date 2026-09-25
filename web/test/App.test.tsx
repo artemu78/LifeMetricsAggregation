@@ -409,7 +409,7 @@ describe('App Component', () => {
     expect(screen.getByText('82.5 %')).toBeInTheDocument()
 
     // Charts
-    expect(screen.getByText('Пульс')).toBeInTheDocument()
+    expect(screen.queryByText('Пульс')).not.toBeInTheDocument()
     expect(screen.getByText('Кислород')).toBeInTheDocument()
 
     // Todoist tasks
