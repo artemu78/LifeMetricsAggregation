@@ -102,9 +102,6 @@ const PRODUCTIVITY_COLORS: Record<string, string> = {
   "2": "#4d82d8",
 };
 
-function hours(seconds: number | null) {
-  return seconds == null ? "—" : `${(seconds / 3600).toFixed(1)} ч`;
-}
 
 function duration(seconds: number) {
   const minutes = Math.round(seconds / 60);

@@ -1,4 +1,4 @@
-import { useState, useRef, useId } from "react";
+import { useState, useId } from "react";
 import type { components } from "./generated/api-types";
 
 type Metric =
@@ -19,11 +19,18 @@ export interface SleepPhaseConfig {
   readonly color: string;
 }
 
+export const SLEEP_PHASE_CONFIGS: Record<SleepPhaseKey, SleepPhaseConfig> = {
+  awake: { key: "awake", label: "awake", name: "Пробуждение", level: 3, color: "#e07a5f" },
+  rem: { key: "rem", label: "rem", name: "Быстрый сон", level: 2, color: "#8f78b5" },
+  light: { key: "light", label: "light", name: "Лёгкий сон", level: 1, color: "#5c95c4" },
+  deep: { key: "deep", label: "deep", name: "Глубокий сон", level: 0, color: "#2c467a" },
+};
+
 export const SLEEP_PHASES: readonly SleepPhaseConfig[] = [
-  { key: "awake", label: "awake", name: "Пробуждение", level: 3, color: "#e07a5f" },
-  { key: "rem", label: "rem", name: "Быстрый сон", level: 2, color: "#8f78b5" },
-  { key: "light", label: "light", name: "Лёгкий сон", level: 1, color: "#5c95c4" },
-  { key: "deep", label: "deep", name: "Глубокий сон", level: 0, color: "#2c467a" },
+  SLEEP_PHASE_CONFIGS.awake,
+  SLEEP_PHASE_CONFIGS.rem,
+  SLEEP_PHASE_CONFIGS.light,
+  SLEEP_PHASE_CONFIGS.deep,
 ] as const;
 
 export function normalizeSleepPhase(metric: string): SleepPhaseKey {
@@ -46,24 +53,6 @@ export interface SleepInterval {
 }
 
 const DEFAULT_STAGE_DURATION_SEC = 900;
-
-function resolveStageDuration(
-  pointValue: number | null | undefined,
-  start: number,
-  nextTimestamp?: string,
-): number {
-  if (pointValue != null && pointValue > 0) {
-    return pointValue;
-  }
-  if (!nextTimestamp) {
-    return DEFAULT_STAGE_DURATION_SEC;
-  }
-  const nextStart = Date.parse(nextTimestamp);
-  if (!Number.isNaN(nextStart) && nextStart > start) {
-    return Math.round((nextStart - start) / 1000);
-  }
-  return DEFAULT_STAGE_DURATION_SEC;
-}
 
 function resolveOverlappingIntervals(intervals: SleepInterval[]): SleepInterval[] {
   for (let i = 0; i < intervals.length - 1; i++) {
@@ -89,17 +78,13 @@ export function extractSleepIntervals(metrics: readonly Metric[]): SleepInterval
 
   const intervals: SleepInterval[] = [];
 
-  for (let i = 0; i < sleepPoints.length; i++) {
-    const p = sleepPoints[i];
+  for (const p of sleepPoints) {
     const start = Date.parse(p.timestamp);
     if (Number.isNaN(start)) continue;
 
     const phase = normalizeSleepPhase(p.metric);
-    const durationSec = resolveStageDuration(
-      p.value,
-      start,
-      sleepPoints[i + 1]?.timestamp,
-    );
+    const durationSec =
+      p.value != null && p.value > 0 ? p.value : DEFAULT_STAGE_DURATION_SEC;
     const end = start + durationSec * 1000;
     intervals.push({ start, end, phase, durationSec });
   }
@@ -107,7 +92,7 @@ export function extractSleepIntervals(metrics: readonly Metric[]): SleepInterval
   return resolveOverlappingIntervals(intervals);
 }
 
-function formatDuration(seconds: number): string {
+export function formatDuration(seconds: number): string {
   const minutes = Math.round(seconds / 60);
   if (minutes < 1) return "< 1 мин";
   const wholeHours = Math.floor(minutes / 60);
@@ -140,7 +125,6 @@ export function SleepStagesChart({
   timezone,
 }: Readonly<SleepStagesChartProps>) {
   const intervals = extractSleepIntervals(sleepMetrics);
-  const svgRef = useRef<SVGSVGElement>(null);
   const idPrefix = useId().replaceAll(":", "");
   const lineGradientId = `sleep-line-gradient-${idPrefix}`;
   const areaGradientId = `sleep-area-gradient-${idPrefix}`;
@@ -163,10 +147,10 @@ export function SleepStagesChart({
     intervals.at(-1)!.end,
   );
 
+  const totalDuration = maxTime - minTime;
   const timeToX = (t: number) =>
     LEFT +
-    ((Math.max(minTime, Math.min(maxTime, t)) - minTime) /
-      (maxTime - minTime || 1)) *
+    ((Math.max(minTime, Math.min(maxTime, t)) - minTime) / totalDuration) *
       PLOT_WIDTH;
 
   let lineD = "";
@@ -193,7 +177,7 @@ export function SleepStagesChart({
     const nextStartX = timeToX(next.start);
 
     const gapMinutes = (next.start - curr.end) / 60_000;
-    if (gapMinutes > 15 && curr.phase !== "awake" && next.phase !== "awake") {
+    if (gapMinutes > 15) {
       const yAwake = Y_LEVELS.awake;
       const transW = Math.min(16, (currEndX - currStartX) * 0.3);
       const flatEndX = Math.max(currStartX, currEndX - transW);
@@ -230,7 +214,7 @@ export function SleepStagesChart({
   const numTicks = 5;
   const ticks: { time: number; x: number; label: string }[] = [];
   for (let i = 0; i < numTicks; i++) {
-    const t = minTime + (i / (numTicks - 1)) * (maxTime - minTime);
+    const t = minTime + (i / (numTicks - 1)) * totalDuration;
     const date = new Date(t);
     const label = date.toLocaleTimeString("ru-RU", {
       hour: "2-digit",
@@ -241,15 +225,14 @@ export function SleepStagesChart({
   }
 
   const handlePointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
-    if (!svgRef.current) return;
-    const rect = svgRef.current.getBoundingClientRect();
+    const rect = e.currentTarget.getBoundingClientRect();
     const svgX = ((e.clientX - rect.left) / rect.width) * WIDTH;
     if (svgX < LEFT || svgX > LEFT + PLOT_WIDTH) {
       setHoverInfo(null);
       return;
     }
     const hoverTime =
-      minTime + ((svgX - LEFT) / PLOT_WIDTH) * (maxTime - minTime);
+      minTime + ((svgX - LEFT) / PLOT_WIDTH) * totalDuration;
     const match = intervals.find(
       (int) => hoverTime >= int.start && hoverTime <= int.end,
     );
@@ -258,8 +241,7 @@ export function SleepStagesChart({
       return;
     }
 
-    const config =
-      SLEEP_PHASES.find((p) => p.key === match.phase) ?? SLEEP_PHASES[2];
+    const config = SLEEP_PHASE_CONFIGS[match.phase];
     const date = new Date(hoverTime);
     const timeStr = date.toLocaleTimeString("ru-RU", {
       hour: "2-digit",
@@ -280,7 +262,6 @@ export function SleepStagesChart({
   return (
     <div className="sleep-chart-card">
       <svg
-        ref={svgRef}
         className="sleep-chart-svg"
         viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
         role="img"
