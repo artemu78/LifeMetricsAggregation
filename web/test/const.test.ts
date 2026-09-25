@@ -38,6 +38,15 @@ describe("const.ts EMA activities", () => {
     expect(activity.icon).toBeDefined();
   });
 
+  it("treats inherited object keys as unknown activity codes", () => {
+    for (const code of ["constructor", "toString", "__proto__"]) {
+      const activity = getEmaActivity(code);
+      expect(activity.code).toBe(code);
+      expect(activity.label).toBe(code.replaceAll("_", " "));
+      expect(activity.icon).toBeDefined();
+    }
+  });
+
   it("handles null, undefined, or empty activity with default other fallback", () => {
     const nullActivity = getEmaActivity(null);
     expect(nullActivity.code).toBe("other");

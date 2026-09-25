@@ -79,7 +79,7 @@ export const EMA_ACTIVITIES: Record<string, EmaActivityConfig> = {
 };
 
 export function getEmaActivity(activity?: string | null): EmaActivityConfig {
-  if (activity && activity in EMA_ACTIVITIES) {
+  if (activity && Object.hasOwn(EMA_ACTIVITIES, activity)) {
     return EMA_ACTIVITIES[activity];
   }
   if (!activity) {
@@ -91,7 +91,7 @@ export function getEmaActivity(activity?: string | null): EmaActivityConfig {
   }
   return {
     code: activity,
-    label: activity.replace(/_/g, " "),
+    label: activity.replaceAll("_", " "),
     icon: CircleEllipsis,
   };
 }

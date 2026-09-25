@@ -30,6 +30,12 @@ UNITS = {
     "LF": "ms2",
     "VLF": "ms2",
 }
+EMA_DETAILS_BACKFILL_VERSION = 1
+
+
+def _ema_rating(value: object) -> int | None:
+    """Keep only valid EMA ratings; malformed optional answers remain unavailable."""
+    return value if type(value) is int and 1 <= value <= 5 else None
 
 
 def _file_hash(path: Path) -> str:
@@ -288,13 +294,10 @@ def import_fitness_drive(config: Config) -> dict[str, object]:
             """
         ).fetchone()["count"]
 
-        missing_ema_details = conn.execute(
-            """
-            SELECT COUNT(*) AS count FROM ema_events
-            WHERE status = 'answered' AND mood IS NULL
-            LIMIT 1
-            """
-        ).fetchone()["count"]
+        missing_ema_details = (
+            conn.execute("PRAGMA user_version").fetchone()[0]
+            < EMA_DETAILS_BACKFILL_VERSION
+        )
 
     changed_paths = paths if legacy_rows > 0 else [
         path for path in paths
@@ -308,7 +311,7 @@ def import_fitness_drive(config: Config) -> dict[str, object]:
         legacy_rows > 0
         or legacy_heart_rate_ids > 0
         or full_record_payloads > 0
-        or missing_ema_details > 0
+        or missing_ema_details
         or bool(changed_paths)
     )
     selected = paths if rebuild else []
@@ -428,10 +431,10 @@ def import_fitness_drive(config: Config) -> dict[str, object]:
                         _as_utc_iso(scheduled_at, config.timezone),
                         _as_utc_iso(answered_at, config.timezone) if answered_at else None,
                         status,
-                        int(mood) if mood is not None else None,
-                        int(energy) if energy is not None else None,
-                        int(focus) if focus is not None else None,
-                        int(stress) if stress is not None else None,
+                        _ema_rating(mood),
+                        _ema_rating(energy),
+                        _ema_rating(focus),
+                        _ema_rating(stress),
                         str(activity) if activity is not None else None,
                         str(note) if note is not None else None,
                     )
@@ -541,6 +544,8 @@ def import_fitness_drive(config: Config) -> dict[str, object]:
                     str((config.fitness_drive_cache / local_name).resolve()),
                 ),
             )
+        if missing_ema_details:
+            conn.execute(f"PRAGMA user_version = {EMA_DETAILS_BACKFILL_VERSION}")
     return {
         "files": files,
         "records": records,
