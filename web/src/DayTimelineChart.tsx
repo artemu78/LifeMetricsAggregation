@@ -41,24 +41,24 @@ function sortCopy<T>(items: T[], compare: (a: T, b: T) => number): T[] {
 }
 
 const WIDTH = 1240;
-const HEIGHT = 804;
+const HEIGHT = 690;
 const LEFT = 128;
 const RIGHT = 26;
 const HEART_TOP = 36;
-const HEART_BOTTOM = 264;
-const STEPS_TOP = 276;
-const STEPS_BOTTOM = 306;
-const WORKOUTS_TOP = 320;
-const ACTIVITY_TOP = 366;
-const ACTIVITY_LANE_TOP = 386;
+const HEART_BOTTOM = 150;
+const STEPS_TOP = 162;
+const STEPS_BOTTOM = 192;
+const WORKOUTS_TOP = 206;
+const ACTIVITY_TOP = 252;
+const ACTIVITY_LANE_TOP = 272;
 const ACTIVITY_LANE_HEIGHT = 14;
-const WELLTORY_TOP = 488;
-const WELLTORY_CENTER = 540;
-const EVENT_TOP = 606;
-const TODOIST_TOP = 654;
-const EMA_TOP = 702;
-const EMA_CENTER_Y = 740;
-const AXIS_Y = 754;
+const WELLTORY_TOP = 374;
+const WELLTORY_CENTER = 426;
+const EVENT_TOP = 492;
+const TODOIST_TOP = 540;
+const EMA_TOP = 588;
+const EMA_CENTER_Y = 626;
+const AXIS_Y = 640;
 const PRODUCTIVITY_COLORS: Record<string, string> = {
   "-2": "#cf5c4f",
   "-1": "#db8b51",
