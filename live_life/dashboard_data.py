@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
+import json
 from zoneinfo import ZoneInfo
 
 from .collectors import logical_window
@@ -61,7 +62,7 @@ def build_dashboard(config: Config, start: date, end: date) -> dict:
     with connect(config.database) as conn:
         for row in conn.execute(
             """
-            SELECT source, occurred_at, metric, value_num, value_text, unit
+            SELECT source, occurred_at, metric, value_num, value_text, unit, payload_json
             FROM metric_events
             WHERE occurred_at >= ? AND occurred_at < ?
               AND source IN ('fitness_drive', 'welltory', 'rescuetime')
@@ -73,15 +74,23 @@ def build_dashboard(config: Config, start: date, end: date) -> dict:
             (start_utc, end_utc),
         ):
             day = logical_date(row["occurred_at"])
-            metrics[day][row["source"]].append(
-                {
-                    "timestamp": row["occurred_at"],
-                    "metric": row["metric"],
-                    "value": row["value_num"],
-                    "valueText": row["value_text"],
-                    "unit": row["unit"],
-                }
-            )
+            point = {
+                "timestamp": row["occurred_at"],
+                "metric": row["metric"],
+                "value": row["value_num"],
+                "valueText": row["value_text"],
+                "unit": row["unit"],
+            }
+            if row["source"] == "rescuetime" and row["metric"].startswith(
+                "rescuetime.seconds.activity."
+            ):
+                try:
+                    productivity = json.loads(row["payload_json"]).get("Productivity")
+                except (ValueError, TypeError, AttributeError):
+                    productivity = None
+                if type(productivity) is int and -2 <= productivity <= 2:
+                    point["productivityLevel"] = productivity
+            metrics[day][row["source"]].append(point)
         for wake_date, points in main_sleep_by_wake_date(conn, start, end, config.timezone).items():
             metrics[wake_date]["fitness_drive"].extend(points)
         for calendar_date, points in steps_by_calendar_date(
@@ -120,14 +129,29 @@ def build_dashboard(config: Config, start: date, end: date) -> dict:
                 {"content": row["content"], "timestamp": row["deleted_at"]}
             )
         for row in conn.execute(
-            """SELECT scheduled_at, status FROM ema_events
+            """SELECT scheduled_at, status, mood, energy, focus, stress, activity, note
+            FROM ema_events
             WHERE scheduled_at >= ? AND scheduled_at < ?
             ORDER BY scheduled_at""",
             (start_utc, end_utc),
         ):
-            ema_events[logical_date(row["scheduled_at"])].append(
-                {"timestamp": row["scheduled_at"], "status": row["status"]}
-            )
+            item = {
+                "timestamp": row["scheduled_at"],
+                "status": row["status"],
+            }
+            if row["mood"] is not None:
+                item["mood"] = row["mood"]
+            if row["energy"] is not None:
+                item["energy"] = row["energy"]
+            if row["focus"] is not None:
+                item["focus"] = row["focus"]
+            if row["stress"] is not None:
+                item["stress"] = row["stress"]
+            if row["activity"] is not None:
+                item["activity"] = row["activity"]
+            if row["note"] is not None:
+                item["note"] = row["note"]
+            ema_events[logical_date(row["scheduled_at"])].append(item)
         for row in conn.execute(
             """
             SELECT source, logical_date, status, finished_at
@@ -152,14 +176,15 @@ def build_dashboard(config: Config, start: date, end: date) -> dict:
         for point in day_metrics["rescuetime"]:
             parts = point["metric"].split(".", 3)
             if len(parts) == 4 and parts[2] in {"activity", "productivity"}:
-                rescue_rows.append(
-                    {
-                        "timestamp": point["timestamp"],
-                        "perspective": parts[2],
-                        "label": parts[3],
-                        "seconds": point["value"],
-                    }
-                )
+                rescue_item = {
+                    "timestamp": point["timestamp"],
+                    "perspective": parts[2],
+                    "label": parts[3],
+                    "seconds": point["value"],
+                }
+                if parts[2] == "activity" and "productivityLevel" in point:
+                    rescue_item["productivityLevel"] = point["productivityLevel"]
+                rescue_rows.append(rescue_item)
         source_items = []
         for source in SOURCES:
             status = run_statuses.get((day_key, source))

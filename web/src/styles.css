@@ -949,8 +949,8 @@ h1 {
 .day-chart-heading p { margin: 0; color: #6d827b; font-size: .82rem; }
 .day-chart-scroll { overflow-x: auto; overscroll-behavior-inline: contain; }
 .day-chart { display: block; width: max(100%, 900px); height: auto; min-height: 420px; }
-.chart-axis-sticky { position: fixed; right: calc(clamp(20px, 3vw, 42px) + 22px); bottom: 0; left: calc(clamp(20px, 3vw, 42px) + 22px); z-index: 21; height: 50px; overflow: hidden; border-top: 1px solid #aebeb6; background: rgba(255, 255, 255, .96); box-shadow: 0 -3px 10px #19312a12; }
-.chart-axis-sticky svg { display: block; width: max(100%, 900px); height: 50px; }
+.chart-axis-sticky { position: fixed; bottom: 0; z-index: 21; height: 50px; overflow: hidden; border-top: 1px solid #aebeb6; background: rgba(255, 255, 255, .96); box-shadow: 0 -3px 10px #19312a12; }
+.chart-axis-sticky svg { display: block; height: 50px; }
 .chart-gridline { stroke: #e4ebe7; stroke-width: 1; }
 .chart-time-gridline { stroke: #edf1ef; stroke-width: 1; stroke-dasharray: 3 5; }
 .chart-day-boundary { stroke: #9aaea5; stroke-width: 1.5; stroke-dasharray: 4 4; }
@@ -959,8 +959,14 @@ h1 {
 .chart-sleep-boundary text { fill: #6769a5; font-size: 10px; font-weight: 800; letter-spacing: .04em; }
 .chart-axis { stroke: #aebeb6; stroke-width: 1.2; }
 .chart-lane-label { fill: #61776d; font-size: 11px; font-weight: 800; letter-spacing: .08em; }
+.chart-activity-lane-label { fill: #61776d; font-size: 10px; font-weight: 650; }
+.chart-activity-name { fill: #fff; font-size: 9px; font-weight: 700; pointer-events: none; }
 .chart-welltory-sub-label { fill: #628276; font-size: 9px; font-weight: 650; }
 .chart-tick { fill: #667c73; font-size: 12px; font-variant-numeric: tabular-nums; }
+.chart-cursor-line { stroke: #7e8984; stroke-width: 1.5; stroke-dasharray: 4 4; pointer-events: none; }
+.chart-cursor-time { pointer-events: none; }
+.chart-cursor-time rect { fill: #eef1ef; stroke: #9aaea5; stroke-width: 1; }
+.chart-cursor-time text { fill: #34483f; font-size: 12px; font-weight: 800; font-variant-numeric: tabular-nums; }
 .chart-inline-label { fill: #62786f; font-size: 10px; }
 .heart-rate-path { fill: none; stroke: #cf5c4f; stroke-width: 2.35; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; transition: stroke-width 120ms ease, filter 120ms ease; }
 .chart-step-bar { fill: #33836b; opacity: .78; transition: opacity 120ms ease, filter 120ms ease; }
@@ -976,8 +982,8 @@ h1 {
 .heart-hover-popup .heart-hover-value { font-size: 12px; font-weight: 800; }
 .chart-duration-segment { cursor: pointer; opacity: .88; transition: opacity 120ms ease, filter 120ms ease; }
 .chart-duration-segment:hover { opacity: 1; filter: brightness(.9); }
-.chart-workout-segment { fill: #4c7f6d; }
-.chart-workout-segment:hover { opacity: 1; filter: brightness(1.12) drop-shadow(0 1px 3px #19312a44); }
+.chart-workout-segment { fill: #7b5aa6; }
+.chart-workout-segment:hover { opacity: 1; filter: brightness(1.12) drop-shadow(0 1px 3px #49326666); }
 .chart-event-dot { stroke: white; stroke-width: 1.5; cursor: pointer; vector-effect: non-scaling-stroke; }
 .chart-event-dot:hover { stroke: #19312a; stroke-width: 2.5; }
 .todoist-marker { position: relative; display: grid; width: 38px; height: 38px; place-items: center; padding: 0; border: 0; border-radius: 10px; background: transparent; cursor: pointer; transition: transform 120ms ease, background-color 120ms ease, filter 120ms ease; }
@@ -998,6 +1004,15 @@ h1 {
 .welltory-value { fill: #36574b; font-size: 9px; font-weight: 800; font-variant-numeric: tabular-nums; pointer-events: none; }
 .welltory-stress-value { fill: #9c583d; }
 .welltory-value.is-crowded { display: none; }
+.ema-speedometer { cursor: pointer; }
+.ema-gauge-hit-area { fill: transparent; pointer-events: all; }
+.ema-speedometer .ema-track-bg { opacity: 0.85; }
+.ema-speedometer .ema-track-value { transition: stroke-width 120ms ease, filter 120ms ease; }
+.ema-speedometer:hover .ema-track-value { stroke-width: 3.2; filter: drop-shadow(0 1px 2px rgba(25, 49, 42, 0.4)); }
+.ema-speedometer:hover .ema-pivot-dot { fill: #35876b; }
+.ema-activity-marker { position: relative; display: grid; width: 24px; height: 24px; place-items: center; padding: 0; border: 1px solid #c7d7ce; border-radius: 6px; background: #ffffff; color: #245c4b; cursor: pointer; box-shadow: 0 1px 3px rgba(25, 49, 42, 0.1); transition: transform 120ms ease, background-color 120ms ease, box-shadow 120ms ease, color 120ms ease; }
+.ema-activity-marker:hover { transform: scale(1.15); background: #e8f3ee; color: #19312a; border-color: #35876b; box-shadow: 0 2px 5px rgba(25, 49, 42, 0.25); }
+.ema-activity-marker:focus-visible { outline: 2px solid #35876b; outline-offset: 1px; }
 .day-chart-selection { position: fixed; z-index: 22; width: max-content; max-width: min(360px, calc(100vw - 32px)); max-height: min(240px, calc(100vh - 32px)); overflow: auto; padding: 10px 12px; border: 1px solid #c7d7ce; border-radius: 10px; background: rgba(255, 255, 255, .97); box-shadow: 0 5px 18px #19312a33; color: #263d35; font-size: .86rem; line-height: 1.4; white-space: pre-line; overflow-wrap: anywhere; pointer-events: none; }
 .day-chart-selection time { font-weight: 800; font-variant-numeric: tabular-nums; }
 @media (prefers-reduced-motion: reduce) { .chart-duration-segment, .chart-step-bar, .heart-rate-path, .todoist-marker, .welltory-measurement .welltory-energy-outline, .welltory-measurement .welltory-stress-outline { transition: none; } }

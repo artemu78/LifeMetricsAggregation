@@ -120,7 +120,7 @@ describe("DayTimelineChart", () => {
     expect(container.querySelectorAll(".chart-step-bar")).toHaveLength(2);
     expect(container.querySelectorAll(".chart-sleep-boundary")).toHaveLength(2);
     expect(container.querySelectorAll(".welltory-measurement")).toHaveLength(4);
-    expect(container.querySelectorAll(".chart-duration-segment")).toHaveLength(6);
+    expect(container.querySelectorAll(".chart-duration-segment")).toHaveLength(2);
     expect(container.querySelectorAll(".chart-workout-segment")).toHaveLength(1);
     expect(within(container).getByText("ТРЕНИРОВКИ")).toBeInTheDocument();
     expect(container.querySelectorAll(".todoist-marker")).toHaveLength(2);
@@ -165,6 +165,37 @@ describe("DayTimelineChart", () => {
 
     unmount();
     expect(observer.disconnect).toHaveBeenCalled();
+  });
+
+  it("groups consecutive activity rows by name and productivity level in five lanes", () => {
+    const activityDay: Day = {
+      ...day,
+      date: "2026-09-18",
+      detail: {
+        ...day.detail,
+        rescueTime: [
+          { timestamp: "2026-09-18T16:10:00+03:00", perspective: "activity", label: "Search", seconds: 44, productivityLevel: 0 },
+          { timestamp: "2026-09-18T16:10:00+03:00", perspective: "activity", label: "Zoom", seconds: 256, productivityLevel: 1 },
+          { timestamp: "2026-09-18T16:15:00+03:00", perspective: "activity", label: "Chat", seconds: 9, productivityLevel: -2 },
+          { timestamp: "2026-09-18T16:15:00+03:00", perspective: "activity", label: "Zoom", seconds: 291, productivityLevel: 1 },
+          { timestamp: "2026-09-18T16:15:00+03:00", perspective: "productivity", label: "1", seconds: 291 },
+        ],
+      },
+    };
+    const { container } = render(<DayTimelineChart day={activityDay} timezone="Europe/Moscow" />);
+    expect(within(container).getByText("АКТИВНОСТЬ")).toBeInTheDocument();
+    expect(within(container).queryByText("ПРОДУКТИВНОСТЬ")).not.toBeInTheDocument();
+    expect(container.querySelectorAll(".chart-activity-lane-label")).toHaveLength(5);
+    const segments = [...container.querySelectorAll<SVGRectElement>(".chart-activity-segment")];
+    const zoom = segments.filter((segment) => segment.getAttribute("aria-label")?.startsWith("Zoom"));
+    expect(zoom).toHaveLength(1);
+    expect(zoom[0]).toHaveAttribute("y", "400");
+    expect(zoom[0]).toHaveAttribute("aria-label", expect.stringContaining("Другая работа"));
+    const chat = segments.find((segment) => segment.getAttribute("aria-label")?.startsWith("Chat"))!;
+    expect(chat).toHaveAttribute("y", "442");
+    expect(segments).toHaveLength(3);
+    fireEvent.mouseEnter(zoom[0], { clientX: 350, clientY: 220 });
+    expect(screen.getByRole("tooltip")).toHaveTextContent("Zoom · Другая работа");
   });
 
   it("selects Welltory and event details and clears selection when the pointer leaves chart items", () => {
@@ -317,14 +348,92 @@ describe("DayTimelineChart", () => {
       },
     };
     const { container } = render(<DayTimelineChart day={emaDay} timezone="Europe/Moscow" />);
-    const emaDots = container.querySelectorAll("circle[fill='#35876b']");
-    expect(emaDots).toHaveLength(1);
+    const emaGauges = container.querySelectorAll(".ema-speedometer");
+    expect(emaGauges).toHaveLength(1);
     expect(container.querySelector("circle[fill='#c39439']")).not.toBeInTheDocument();
     expect(container.querySelector("circle[fill='#b45c54']")).not.toBeInTheDocument();
     expect(container.querySelector("circle[fill='#87948e']")).not.toBeInTheDocument();
 
-    fireEvent.mouseEnter(emaDots[0], { clientX: 350, clientY: 220 });
+    fireEvent.mouseEnter(emaGauges[0], { clientX: 350, clientY: 220 });
     expect(screen.getByRole("tooltip")).toHaveTextContent("EMA · ответ отправлен");
+  });
+
+  it("shows EMA event details including mood, energy, focus, stress, activity, and note in tooltip without numbers or titles on gauge", () => {
+    const emaDay: Day = {
+      ...day,
+      detail: {
+        ...day.detail,
+        emaEvents: [
+          {
+            timestamp: "2026-09-24T12:01:00+03:00",
+            status: "answered",
+            mood: 4,
+            energy: 3,
+            focus: 2,
+            stress: 1,
+            activity: "work_coding",
+            note: "focused session",
+          },
+        ],
+      },
+    };
+    const { container } = render(<DayTimelineChart day={emaDay} timezone="Europe/Moscow" />);
+    const emaGauge = container.querySelector(".ema-speedometer");
+    expect(emaGauge).toBeInTheDocument();
+
+    // Verify 3 concentric tracks are present: mood (outer), energy (middle), stress (inner)
+    expect(emaGauge!.querySelector(".ema-track-mood")).toBeInTheDocument();
+    expect(emaGauge!.querySelector(".ema-track-energy")).toBeInTheDocument();
+    expect(emaGauge!.querySelector(".ema-track-stress")).toBeInTheDocument();
+
+    // Verify no numbers and no text titles are rendered inside the speedometer gauge
+    expect(emaGauge!.querySelector("text")).toBeNull();
+
+    fireEvent.mouseEnter(emaGauge!, { clientX: 350, clientY: 220 });
+    fireEvent.mouseMove(emaGauge!, { clientX: 351, clientY: 221 });
+    fireEvent.click(emaGauge!, { clientX: 351, clientY: 221 });
+    const tooltip = screen.getByRole("tooltip");
+    expect(tooltip).toHaveTextContent("EMA · ответ отправлен");
+    expect(tooltip).toHaveTextContent("настроение: 4/5, энергия: 3/5, фокус: 2/5, стресс: 1/5");
+    expect(tooltip).toHaveTextContent("занятие: Work / coding");
+    expect(tooltip).toHaveTextContent("заметка: focused session");
+  });
+
+  it("renders EMA activity as Lucide icon on СОБЫТИЯ track above other events", () => {
+    const emaDay: Day = {
+      ...day,
+      detail: {
+        ...day.detail,
+        emaEvents: [
+          {
+            timestamp: "2026-09-24T12:01:00+03:00",
+            status: "answered",
+            mood: 4,
+            energy: 3,
+            focus: 2,
+            stress: 1,
+            activity: "work_coding",
+            note: "focused session",
+          },
+        ],
+      },
+    };
+    const { container } = render(<DayTimelineChart day={emaDay} timezone="Europe/Moscow" />);
+    const activityMarker = container.querySelector(".ema-activity-marker");
+    expect(activityMarker).toBeInTheDocument();
+    expect(activityMarker).toHaveAttribute("aria-label", "EMA · Work / coding");
+
+    // The foreignObject containing the activity marker should be at y = 608 (above dots at cy >= 640)
+    const foreignObject = activityMarker!.parentElement;
+    expect(foreignObject).toHaveAttribute("y", "608");
+
+    // Hovering and clicking the activity icon displays the EMA activity tooltip
+    fireEvent.mouseEnter(activityMarker!, { clientX: 350, clientY: 220 });
+    fireEvent.mouseMove(activityMarker!, { clientX: 351, clientY: 221 });
+    fireEvent.click(activityMarker!, { clientX: 351, clientY: 221 });
+    const tooltip = screen.getByRole("tooltip");
+    expect(tooltip).toHaveTextContent("EMA · Work / coding");
+    expect(tooltip).toHaveTextContent("заметка: focused session");
   });
 
   it("renders workout blocks with durations, titles, and hover tooltip on the separate track", () => {
@@ -340,6 +449,18 @@ describe("DayTimelineChart", () => {
             valueText: "Бег",
           },
           {
+            timestamp: "2026-09-24T14:00:00+03:00",
+            metric: "fitness_drive.exercise",
+            value: 3600,
+            valueText: "Велосипед",
+          },
+          {
+            timestamp: "2026-09-24T16:00:00+03:00",
+            metric: "fitness_drive.exercise",
+            value: 0,
+            valueText: "",
+          },
+          {
             timestamp: "2026-09-24T18:00:00+03:00",
             metric: "fitness_drive.exercise",
             value: 4800,
@@ -349,12 +470,18 @@ describe("DayTimelineChart", () => {
     };
     const { container } = render(<DayTimelineChart day={workoutDay} timezone="Europe/Moscow" />);
     const workoutSegments = container.querySelectorAll(".chart-workout-segment");
-    expect(workoutSegments).toHaveLength(2);
+    expect(workoutSegments).toHaveLength(4);
 
     fireEvent.mouseEnter(workoutSegments[0], { clientX: 200, clientY: 330 });
     expect(screen.getByRole("tooltip")).toHaveTextContent("Бег · 45 мин");
 
-    fireEvent.mouseEnter(workoutSegments[1], { clientX: 600, clientY: 330 });
+    fireEvent.mouseEnter(workoutSegments[1], { clientX: 400, clientY: 330 });
+    expect(screen.getByRole("tooltip")).toHaveTextContent("Велосипед · 1 ч");
+
+    fireEvent.mouseEnter(workoutSegments[2], { clientX: 500, clientY: 330 });
+    expect(screen.getByRole("tooltip")).toHaveTextContent("Тренировка");
+
+    fireEvent.mouseEnter(workoutSegments[3], { clientX: 600, clientY: 330 });
     expect(screen.getByRole("tooltip")).toHaveTextContent("Тренировка · 1 ч 20 мин");
   });
 

@@ -205,6 +205,26 @@ components:
         status:
           type: string
           enum: [pending, answered, dismissed, expired]
+        mood:
+          type: integer
+          minimum: 1
+          maximum: 5
+        energy:
+          type: integer
+          minimum: 1
+          maximum: 5
+        focus:
+          type: integer
+          minimum: 1
+          maximum: 5
+        stress:
+          type: integer
+          minimum: 1
+          maximum: 5
+        activity:
+          type: string
+        note:
+          type: string
     RescueTimeItem:
       type: object
       additionalProperties: false
@@ -221,6 +241,11 @@ components:
         seconds:
           type: number
           minimum: 0
+        productivityLevel:
+          type: integer
+          minimum: -2
+          maximum: 2
+          description: RescueTime classification for an activity row, when available.
     BraceletSummary:
       type: object
       additionalProperties: false

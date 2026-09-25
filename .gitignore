@@ -14,3 +14,4 @@ coverage/
 vite.config.js
 vite.config.d.ts
 reva-health-explorer/
+mcp_server

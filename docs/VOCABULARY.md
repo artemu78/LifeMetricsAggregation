@@ -93,7 +93,7 @@ The user-visible measurements and text associated with one logical day from Brac
 _Avoid_: Raw payload, database dump
 
 **Ход дня**:
-A popup with a shared timeline of saved measurements and events for one logical day, shown in the dashboard timezone. It has separate tracks for EMA and Todoist events, alongside Bracelet pulse, steps, and workouts, RescueTime activity and productivity, and Welltory measurements; sleep and wake boundaries appear when they fall within the logical day.
+A popup with a shared timeline of saved measurements and events for one logical day, shown in the dashboard timezone. It has separate tracks for EMA and Todoist events, alongside Bracelet pulse, steps, and workouts, RescueTime activities grouped by their productivity classification, and Welltory measurements; sleep and wake boundaries appear when they fall within the logical day.
 _Avoid_: Calendar-day timeline, complete personal history
 
 **Todoist task event**:
