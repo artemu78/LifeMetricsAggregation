@@ -680,6 +680,36 @@ export function DayTimelineChart({
     tick += tickEvery
   ) ticks.push(tick);
   const markers = new Map<string, number>();
+  const timeAxisContent = (
+    <>
+      <line
+        x1={LEFT}
+        x2={WIDTH - RIGHT}
+        y1={AXIS_Y}
+        y2={AXIS_Y}
+        className="chart-axis"
+      />
+      {ticks.map((tick) => (
+        <text
+          key={tick}
+          x={x(tick)}
+          y={AXIS_Y + 20}
+          textAnchor="middle"
+          className="chart-tick"
+        >
+          {localLabel(tick, timezone)}
+        </text>
+      ))}
+      {cursorX !== null && cursorLabelX !== null && (
+        <g className="chart-cursor-time">
+          <rect x={cursorLabelX} y={AXIS_Y + 5} width="52" height="20" rx="4" />
+          <text x={cursorLabelX + 26} y={AXIS_Y + 19} textAnchor="middle">
+            {localLabel(cursorTime!, timezone)}
+          </text>
+        </g>
+      )}
+    </>
+  );
 
   return (
     <section
@@ -1121,32 +1151,7 @@ export function DayTimelineChart({
             />
           )}
           <g ref={timeAxisRef} className="chart-time-axis">
-            <line
-              x1={LEFT}
-              x2={WIDTH - RIGHT}
-              y1={AXIS_Y}
-              y2={AXIS_Y}
-              className="chart-axis"
-            />
-            {ticks.map((tick) => (
-              <text
-                key={tick}
-                x={x(tick)}
-                y={AXIS_Y + 20}
-                textAnchor="middle"
-                className="chart-tick"
-              >
-                {localLabel(tick, timezone)}
-              </text>
-            ))}
-            {cursorX !== null && cursorLabelX !== null && (
-              <g className="chart-cursor-time">
-                <rect x={cursorLabelX} y={AXIS_Y + 5} width="52" height="20" rx="4" />
-                <text x={cursorLabelX + 26} y={AXIS_Y + 19} textAnchor="middle">
-                  {localLabel(cursorTime!, timezone)}
-                </text>
-              </g>
-            )}
+            {timeAxisContent}
           </g>
         </svg>
       </div>
@@ -1161,32 +1166,7 @@ export function DayTimelineChart({
             preserveAspectRatio="none"
             style={{ width: axisFrame.chartWidth, transform: `translateX(-${chartScrollLeft}px)` }}
           >
-            <line
-              x1={LEFT}
-              x2={WIDTH - RIGHT}
-              y1={AXIS_Y}
-              y2={AXIS_Y}
-              className="chart-axis"
-            />
-            {ticks.map((tick) => (
-              <text
-                key={tick}
-                x={x(tick)}
-                y={AXIS_Y + 20}
-                textAnchor="middle"
-                className="chart-tick"
-              >
-                {localLabel(tick, timezone)}
-              </text>
-            ))}
-            {cursorX !== null && cursorLabelX !== null && (
-              <g className="chart-cursor-time">
-                <rect x={cursorLabelX} y={AXIS_Y + 5} width="52" height="20" rx="4" />
-                <text x={cursorLabelX + 26} y={AXIS_Y + 19} textAnchor="middle">
-                  {localLabel(cursorTime!, timezone)}
-                </text>
-              </g>
-            )}
+            {timeAxisContent}
           </svg>
         </div>
       )}

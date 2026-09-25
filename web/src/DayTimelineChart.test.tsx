@@ -101,6 +101,21 @@ function installIntersectionObserver() {
   return { disconnect, observe };
 }
 
+function installDashboard() {
+  const dashboard = {
+    from: day.date,
+    to: day.date,
+    timezone: "Europe/Moscow",
+    generatedAt: "2026-09-24T12:00:00+03:00",
+    days: [day],
+  };
+  dashboardStore.dashboard = dashboard as unknown as typeof dashboardStore.dashboard;
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+    ok: true,
+    json: async () => dashboard,
+  }));
+}
+
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
@@ -229,6 +244,42 @@ describe("DayTimelineChart", () => {
     expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
   });
 
+  it("keeps the hover time on the sticky axis aligned with the chart while scrolling", () => {
+    installIntersectionObserver();
+    const { container } = render(<DayTimelineChart day={day} timezone="Europe/Moscow" />);
+    const scroll = container.querySelector<HTMLElement>(".day-chart-scroll")!;
+    const chart = scroll.querySelector<SVGSVGElement>("svg")!;
+    let chartLeft = 20;
+    vi.spyOn(scroll, "getBoundingClientRect").mockImplementation(() => ({
+      left: 20, width: 600, top: 0, height: 500, right: 620, bottom: 500,
+      x: 20, y: 0, toJSON: () => ({}),
+    } as DOMRect));
+    vi.spyOn(chart, "getBoundingClientRect").mockImplementation(() => ({
+      left: chartLeft, width: 1240, top: 0, height: 500, right: chartLeft + 1240, bottom: 500,
+      x: chartLeft, y: 0, toJSON: () => ({}),
+    } as DOMRect));
+    fireEvent(window, new Event("resize"));
+    fireEvent.mouseEnter(scroll, { clientX: 300 });
+
+    const chartTime = () => container.querySelector(".chart-time-axis .chart-cursor-time text")?.textContent;
+    const stickyTime = () => container.querySelector(".chart-axis-sticky .chart-cursor-time text")?.textContent;
+    expect(chartTime()).toBeTruthy();
+    expect(stickyTime()).toBe(chartTime());
+    expect(container.querySelector(".chart-axis-sticky")).toHaveStyle({ left: "20px", width: "600px" });
+    expect(container.querySelector(".chart-axis-sticky svg")).toHaveStyle({ width: "1240px" });
+
+    const originalX = Number(container.querySelector(".chart-cursor-line")?.getAttribute("x1"));
+    chartLeft = -80;
+    fireEvent.scroll(scroll, { target: { scrollLeft: 100 } });
+    expect(Number(container.querySelector(".chart-cursor-line")?.getAttribute("x1"))).toBeCloseTo(originalX + 100, 0);
+    expect(stickyTime()).toBe(chartTime());
+    expect(container.querySelector(".chart-axis-sticky svg")).toHaveStyle({ transform: "translateX(-100px)" });
+
+    fireEvent.mouseLeave(scroll);
+    expect(container.querySelector(".chart-cursor-line")).not.toBeInTheDocument();
+    expect(stickyTime()).toBeUndefined();
+  });
+
   it("shows the closest heart sample and safely ignores a missing SVG box", () => {
     const { container } = render(<DayTimelineChart day={day} timezone="Europe/Moscow" />);
     const hitArea = container.querySelector<SVGRectElement>(".heart-rate-hit-area")!;
@@ -299,18 +350,7 @@ describe("DayTimelineChart", () => {
   });
 
   it("opens the timeline route in a native dialog and closes it from the backdrop control", async () => {
-    const dashboard = {
-      from: day.date,
-      to: day.date,
-      timezone: "Europe/Moscow",
-      generatedAt: "2026-09-24T12:00:00+03:00",
-      days: [day],
-    };
-    dashboardStore.dashboard = dashboard as unknown as typeof dashboardStore.dashboard;
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => dashboard,
-    }));
+    installDashboard();
     Object.defineProperty(HTMLDialogElement.prototype, "showModal", {
       configurable: true,
       value(this: HTMLDialogElement) { this.open = true; },
@@ -486,18 +526,7 @@ describe("DayTimelineChart", () => {
   });
 
   it("renders day-chart-card inside day-detail-modal instead of the full timeline link", async () => {
-    const dashboard = {
-      from: day.date,
-      to: day.date,
-      timezone: "Europe/Moscow",
-      generatedAt: "2026-09-24T12:00:00+03:00",
-      days: [day],
-    };
-    dashboardStore.dashboard = dashboard as unknown as typeof dashboardStore.dashboard;
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => dashboard,
-    }));
+    installDashboard();
 
     const { container } = render(
       <MemoryRouter initialEntries={[`/day/${day.date}`]}>

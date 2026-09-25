@@ -129,6 +129,51 @@ describe('Drive recovery', () => {
     expect(screen.queryByText(/Ожидаем вход/)).not.toBeInTheDocument()
   })
 
+  it('ignores a connection error after unmount', async () => {
+    let reject!: (reason: Error) => void
+    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>((_, fail) => { reject = fail })))
+    const view = render(<DriveRecovery syncing={false} retry={() => {}} />)
+    connect()
+    view.unmount()
+    await act(async () => { reject(new Error('Late connection error')) })
+    expect(screen.queryByText('Late connection error')).not.toBeInTheDocument()
+  })
+
+  it('does not send an uploaded file after unmount while reading it', async () => {
+    let finishReading!: (content: string) => void
+    const fetcher = vi.fn()
+    vi.stubGlobal('fetch', fetcher)
+    const view = render(<DriveRecovery syncing={false} retry={() => {}} />)
+    fireEvent.change(fileInput(), { target: { files: [{ size: 2, text: () => new Promise<string>(done => { finishReading = done }) }] } })
+    view.unmount()
+    await act(async () => { finishReading('{}') })
+    expect(fetcher).not.toHaveBeenCalled()
+  })
+
+  it('ignores an upload response after unmount', async () => {
+    let resolve!: (response: Response) => void
+    const fetcher = vi.fn(() => new Promise<Response>(done => { resolve = done }))
+    vi.stubGlobal('fetch', fetcher)
+    const view = render(<DriveRecovery syncing={false} retry={() => {}} />)
+    upload()
+    await waitFor(() => expect(fetcher).toHaveBeenCalledOnce())
+    view.unmount()
+    await act(async () => { resolve(response({ status: 'idle' })) })
+    expect(screen.queryByText(/Настройки сохранены/)).not.toBeInTheDocument()
+  })
+
+  it('ignores an upload error after unmount', async () => {
+    let reject!: (reason: Error) => void
+    const fetcher = vi.fn(() => new Promise<Response>((_, fail) => { reject = fail }))
+    vi.stubGlobal('fetch', fetcher)
+    const view = render(<DriveRecovery syncing={false} retry={() => {}} />)
+    upload()
+    await waitFor(() => expect(fetcher).toHaveBeenCalledOnce())
+    view.unmount()
+    await act(async () => { reject(new Error('Late upload error')) })
+    expect(screen.queryByText('Late upload error')).not.toBeInTheDocument()
+  })
+
   it('stops polling when unmounted while a poll is in flight', async () => {
     vi.useFakeTimers()
     let resolve!: (response: Response) => void
