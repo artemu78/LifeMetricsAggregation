@@ -338,8 +338,8 @@ export function SleepStagesChart({
           strokeLinejoin="round"
         />
 
-        {ticks.map((tick, idx) => (
-          <g key={idx}>
+        {ticks.map((tick) => (
+          <g key={tick.time}>
             <line
               x1={tick.x}
               y1={BOTTOM}
