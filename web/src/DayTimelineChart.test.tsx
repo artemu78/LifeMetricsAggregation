@@ -204,10 +204,10 @@ describe("DayTimelineChart", () => {
     const segments = [...container.querySelectorAll<SVGRectElement>(".chart-activity-segment")];
     const zoom = segments.filter((segment) => segment.getAttribute("aria-label")?.startsWith("Zoom"));
     expect(zoom).toHaveLength(1);
-    expect(zoom[0]).toHaveAttribute("y", "400");
+    expect(zoom[0]).toHaveAttribute("y", "286");
     expect(zoom[0]).toHaveAttribute("aria-label", expect.stringContaining("Другая работа"));
     const chat = segments.find((segment) => segment.getAttribute("aria-label")?.startsWith("Chat"))!;
-    expect(chat).toHaveAttribute("y", "442");
+    expect(chat).toHaveAttribute("y", "328");
     expect(segments).toHaveLength(3);
     fireEvent.mouseEnter(zoom[0], { clientX: 350, clientY: 220 });
     expect(screen.getByRole("tooltip")).toHaveTextContent("Zoom · Другая работа");
@@ -463,9 +463,9 @@ describe("DayTimelineChart", () => {
     expect(activityMarker).toBeInTheDocument();
     expect(activityMarker).toHaveAttribute("aria-label", "EMA · Work / coding");
 
-    // The foreignObject containing the activity marker should be at y = 608 (above dots at cy >= 640)
+    // The foreignObject containing the activity marker should be at y = 494 (above dots at cy >= 526)
     const foreignObject = activityMarker!.parentElement;
-    expect(foreignObject).toHaveAttribute("y", "608");
+    expect(foreignObject).toHaveAttribute("y", "494");
 
     // Hovering and clicking the activity icon displays the EMA activity tooltip
     fireEvent.mouseEnter(activityMarker!, { clientX: 350, clientY: 220 });
