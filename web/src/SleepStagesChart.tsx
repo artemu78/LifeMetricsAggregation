@@ -5,18 +5,18 @@ type Metric =
   components["schemas"]["DashboardDay"]["detail"]["braceletMetrics"][number];
 
 export interface SleepStagesChartProps {
-  sleepMetrics: Metric[];
-  timezone: string;
+  readonly sleepMetrics: readonly Metric[];
+  readonly timezone: string;
 }
 
 export type SleepPhaseKey = "deep" | "light" | "rem" | "awake";
 
 export interface SleepPhaseConfig {
-  key: SleepPhaseKey;
-  label: string;
-  name: string;
-  level: number;
-  color: string;
+  readonly key: SleepPhaseKey;
+  readonly label: string;
+  readonly name: string;
+  readonly level: number;
+  readonly color: string;
 }
 
 export const SLEEP_PHASES: readonly SleepPhaseConfig[] = [
@@ -28,8 +28,8 @@ export const SLEEP_PHASES: readonly SleepPhaseConfig[] = [
 
 export function normalizeSleepPhase(metric: string): SleepPhaseKey {
   const clean = metric
-    .replace("fitness_drive.sleep.", "")
-    .replace("_seconds", "")
+    .replaceAll("fitness_drive.sleep.", "")
+    .replaceAll("_seconds", "")
     .toLowerCase();
 
   if (clean.includes("deep")) return "deep";
@@ -45,7 +45,42 @@ export interface SleepInterval {
   durationSec: number;
 }
 
-export function extractSleepIntervals(metrics: Metric[]): SleepInterval[] {
+const DEFAULT_STAGE_DURATION_SEC = 900;
+
+function resolveStageDuration(
+  pointValue: number | null | undefined,
+  start: number,
+  nextTimestamp?: string,
+): number {
+  if (pointValue != null && pointValue > 0) {
+    return pointValue;
+  }
+  if (!nextTimestamp) {
+    return DEFAULT_STAGE_DURATION_SEC;
+  }
+  const nextStart = Date.parse(nextTimestamp);
+  if (!Number.isNaN(nextStart) && nextStart > start) {
+    return Math.round((nextStart - start) / 1000);
+  }
+  return DEFAULT_STAGE_DURATION_SEC;
+}
+
+function resolveOverlappingIntervals(intervals: SleepInterval[]): SleepInterval[] {
+  for (let i = 0; i < intervals.length - 1; i++) {
+    const curr = intervals[i];
+    const next = intervals[i + 1];
+    if (curr.end > next.start) {
+      curr.end = next.start;
+      curr.durationSec = Math.max(
+        60,
+        Math.round((curr.end - curr.start) / 1000),
+      );
+    }
+  }
+  return intervals;
+}
+
+export function extractSleepIntervals(metrics: readonly Metric[]): SleepInterval[] {
   const sleepPoints = metrics
     .filter((p) => p.metric.startsWith("fitness_drive.sleep."))
     .sort((a, b) => a.timestamp.localeCompare(b.timestamp));
@@ -57,39 +92,19 @@ export function extractSleepIntervals(metrics: Metric[]): SleepInterval[] {
   for (let i = 0; i < sleepPoints.length; i++) {
     const p = sleepPoints[i];
     const start = Date.parse(p.timestamp);
-    if (isNaN(start)) continue;
+    if (Number.isNaN(start)) continue;
 
     const phase = normalizeSleepPhase(p.metric);
-    let durationSec = p.value != null && p.value > 0 ? p.value : 0;
-
-    if (!durationSec) {
-      if (i + 1 < sleepPoints.length) {
-        const nextStart = Date.parse(sleepPoints[i + 1].timestamp);
-        if (!isNaN(nextStart) && nextStart > start) {
-          durationSec = Math.round((nextStart - start) / 1000);
-        } else {
-          durationSec = 900;
-        }
-      } else {
-        durationSec = 900;
-      }
-    }
-
+    const durationSec = resolveStageDuration(
+      p.value,
+      start,
+      sleepPoints[i + 1]?.timestamp,
+    );
     const end = start + durationSec * 1000;
     intervals.push({ start, end, phase, durationSec });
   }
 
-  for (let i = 0; i < intervals.length - 1; i++) {
-    if (intervals[i].end > intervals[i + 1].start) {
-      intervals[i].end = intervals[i + 1].start;
-      intervals[i].durationSec = Math.max(
-        60,
-        Math.round((intervals[i].end - intervals[i].start) / 1000),
-      );
-    }
-  }
-
-  return intervals;
+  return resolveOverlappingIntervals(intervals);
 }
 
 function formatDuration(seconds: number): string {
@@ -123,10 +138,10 @@ const Y_LEVELS: Record<SleepPhaseKey, number> = {
 export function SleepStagesChart({
   sleepMetrics,
   timezone,
-}: SleepStagesChartProps) {
+}: Readonly<SleepStagesChartProps>) {
   const intervals = extractSleepIntervals(sleepMetrics);
   const svgRef = useRef<SVGSVGElement>(null);
-  const idPrefix = useId().replace(/:/g, "");
+  const idPrefix = useId().replaceAll(":", "");
   const lineGradientId = `sleep-line-gradient-${idPrefix}`;
   const areaGradientId = `sleep-area-gradient-${idPrefix}`;
 
@@ -144,8 +159,8 @@ export function SleepStagesChart({
 
   const minTime = intervals[0].start;
   const maxTime = Math.max(
-    minTime + 3600_000,
-    intervals[intervals.length - 1].end,
+    minTime + 3_600_000,
+    intervals.at(-1)!.end,
   );
 
   const timeToX = (t: number) =>
@@ -209,7 +224,7 @@ export function SleepStagesChart({
     lineD += ` C ${tMidX.toFixed(1)} ${currY.toFixed(1)}, ${tMidX.toFixed(1)} ${nextY.toFixed(1)}, ${tEndX.toFixed(1)} ${nextY.toFixed(1)}`;
   }
 
-  const lastX = timeToX(intervals[intervals.length - 1].end);
+  const lastX = timeToX(intervals.at(-1)!.end);
   const areaD = `${lineD} L ${lastX.toFixed(1)} ${BOTTOM.toFixed(1)} L ${firstX.toFixed(1)} ${BOTTOM.toFixed(1)} Z`;
 
   const numTicks = 5;
@@ -237,7 +252,7 @@ export function SleepStagesChart({
       minTime + ((svgX - LEFT) / PLOT_WIDTH) * (maxTime - minTime);
     const match =
       intervals.find((int) => hoverTime >= int.start && hoverTime <= int.end) ??
-      intervals[intervals.length - 1];
+      intervals.at(-1)!;
 
     const config =
       SLEEP_PHASES.find((p) => p.key === match.phase) ?? SLEEP_PHASES[2];
