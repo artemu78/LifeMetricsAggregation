@@ -48,6 +48,7 @@ import {
 } from "./dayDetail";
 import { inclusiveDateCount } from "./dashboardWindow";
 import { DayTimelineChart } from "./DayTimelineChart";
+import { SleepStagesChart } from "./SleepStagesChart";
 import {
   dashboardStore as store,
   type DashboardDay,
@@ -101,9 +102,6 @@ const PRODUCTIVITY_COLORS: Record<string, string> = {
   "2": "#4d82d8",
 };
 
-function hours(seconds: number | null) {
-  return seconds == null ? "—" : `${(seconds / 3600).toFixed(1)} ч`;
-}
 
 function duration(seconds: number) {
   const minutes = Math.round(seconds / 60);
@@ -543,7 +541,7 @@ function DayModal({
         />
 
         <div className="detail-grid">
-          <section className="panel">
+          <section className="panel bracelet-panel">
             <h3>Браслет</h3>
             <div className="metric-list">
               <p>
@@ -555,25 +553,10 @@ function DayModal({
                 <b>{day.bracelet.steps?.toLocaleString("ru-RU") ?? "—"}</b>
               </p>
             </div>
-            <div className="sleep-stages">
-              {sleep.map((point) => (
-                <div key={`${point.timestamp}-${point.metric}`}>
-                  <span>
-                    <RecordTime
-                      timestamp={point.timestamp}
-                      timezone={timezone}
-                    />
-                    {point.metric
-                      .replace("fitness_drive.sleep.", "")
-                      .replace("_seconds", "")}
-                  </span>
-                  <b>{hours(point.value)}</b>
-                </div>
-              ))}
-            </div>
+            <SleepStagesChart sleepMetrics={sleep} timezone={timezone} />
           </section>
 
-          <section className="panel">
+          <section className="panel welltory-panel">
             <h3>Welltory</h3>
             <div className="measurement-grid">
               {day.detail.welltoryMetrics.map((point) => (
@@ -598,13 +581,6 @@ function DayModal({
         </div>
 
         <div className="charts">
-          <MetricChart
-            day={day}
-            metric="fitness_drive.heart_rate"
-            color="#cf5c4f"
-            title="Пульс"
-            timezone={timezone}
-          />
           <MetricChart
             day={day}
             metric="fitness_drive.oxygen_saturation"
