@@ -392,7 +392,7 @@ describe('App Component', () => {
       </MemoryRouter>,
     )
 
-    expect(screen.getByRole('heading', { name: '2026-09-15' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: '2026-09-15' })).toBeInTheDocument()
     expect(screen.getByText('Подробности дня')).toBeInTheDocument()
 
     // Sources statuses

@@ -1,4 +1,3 @@
-import type { ComponentType } from "react";
 import {
   Armchair,
   BookOpen,
@@ -13,6 +12,7 @@ import {
   Utensils,
   type LucideProps,
 } from "lucide-react";
+import type { ComponentType } from "react";
 
 export type EmaActivityConfig = {
   code: string;

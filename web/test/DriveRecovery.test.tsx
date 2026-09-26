@@ -1,7 +1,7 @@
 import React from 'react'
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor, cleanup, act } from '@testing-library/react'
-import { DriveRecovery } from '../src/DriveRecovery'
+import { DriveRecovery } from '../src/synchronization/DriveRecovery'
 
 const issue = { code: 'GOOGLE_RECONNECT_REQUIRED', message: 'Разрешение Google истекло.', action: 'reconnect' as const, steps: ['Войдите в Google.'], diagnosticId: 'safe-id' }
 const response = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status })
@@ -189,7 +189,7 @@ describe('Drive recovery', () => {
 })
 
 it('the sync dialog exposes the returned issue and does not announce full success', async () => {
-  const { SyncModal } = await import('../src/App')
+  const { SyncModal } = await import('../src/synchronization/SyncModal')
   const { dashboardStore } = await import('../src/store')
   dashboardStore.error = null
   dashboardStore.syncing = false

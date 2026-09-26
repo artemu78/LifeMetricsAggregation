@@ -1,84 +1,121 @@
+import { MINUTES_PER_HOUR, SECONDS_PER_MINUTE } from "./shared/timeConstants";
+import {
+  PERCENT_MAX,
+  PRODUCTIVITY_MIDPOINT,
+  PRODUCTIVITY_MIN_WEIGHT,
+  PRODUCTIVITY_MAX_WEIGHT,
+} from "./shared/chartConfig";
+
 export type RescueTimeRecord = {
-  timestamp: string
-  perspective: 'activity' | 'productivity'
-  label: string
-  seconds: number
-}
+  timestamp: string;
+  perspective: "activity" | "productivity";
+  label: string;
+  seconds: number;
+};
 
 const PRODUCTIVITY_WEIGHTS: Record<string, number> = {
-  '-2': -2,
-  '-1': -1,
-  '0': 0,
-  '1': 1,
-  '2': 2,
-}
+  "-2": -2,
+  "-1": -1,
+  "0": 0,
+  "1": 1,
+  "2": 2,
+};
 
 export const PRODUCTIVITY_LABELS: Record<string, string> = {
-  '-2': 'Отвлекающее',
-  '-1': 'Личное',
-  '0': 'Нейтральное',
-  '1': 'Другая работа',
-  '2': 'Сосредоточенная работа',
-}
+  "-2": "Отвлекающее",
+  "-1": "Личное",
+  "0": "Нейтральное",
+  "1": "Другая работа",
+  "2": "Сосредоточенная работа",
+};
 
 export function formatRecordTime(timestamp: string, timezone: string): string {
-  return new Date(timestamp).toLocaleTimeString('ru-RU', {
-    hour: '2-digit',
-    minute: '2-digit',
+  return new Date(timestamp).toLocaleTimeString("ru-RU", {
+    hour: "2-digit",
+    minute: "2-digit",
     timeZone: timezone,
-  })
+  });
 }
 
 export function formatSleepDuration(seconds: number | null): string {
-  if (seconds == null) return '—'
-  const totalMinutes = Math.round(seconds / 60)
-  const hours = Math.floor(totalMinutes / 60)
-  const minutes = totalMinutes % 60
-  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`
+  if (seconds == null) return "—";
+  const totalMinutes = Math.round(seconds / SECONDS_PER_MINUTE);
+  const hours = Math.floor(totalMinutes / MINUTES_PER_HOUR);
+  const minutes = totalMinutes % MINUTES_PER_HOUR;
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
 }
 
 export function formatTrackedDuration(seconds: number): string {
-  const totalMinutes = Math.round(seconds / 60)
-  const hours = Math.floor(totalMinutes / 60)
-  const minutes = totalMinutes % 60
-  return `${hours}:${String(minutes).padStart(2, '0')}`
+  const totalMinutes = Math.round(seconds / SECONDS_PER_MINUTE);
+  const hours = Math.floor(totalMinutes / MINUTES_PER_HOUR);
+  const minutes = totalMinutes % MINUTES_PER_HOUR;
+  return `${hours}:${String(minutes).padStart(2, "0")}`;
 }
 
 const PRODUCTIVITY_SCALE = {
   low: [207, 92, 79],
   middle: [167, 179, 174],
   high: [77, 130, 216],
-} as const
+} as const;
 
 export function productivityIndexColor(index: number): string {
-  const clamped = Math.max(0, Math.min(100, index))
-  const [from, to, progress] = clamped <= 50
-    ? [PRODUCTIVITY_SCALE.low, PRODUCTIVITY_SCALE.middle, clamped / 50]
-    : [PRODUCTIVITY_SCALE.middle, PRODUCTIVITY_SCALE.high, (clamped - 50) / 50]
-  const channel = (position: number) => Math.round(from[position] + (to[position] - from[position]) * progress)
-  return `rgb(${channel(0)}, ${channel(1)}, ${channel(2)})`
+  const clamped = Math.max(0, Math.min(PERCENT_MAX, index));
+  const [from, to, progress] =
+    clamped <= PRODUCTIVITY_MIDPOINT
+      ? [
+          PRODUCTIVITY_SCALE.low,
+          PRODUCTIVITY_SCALE.middle,
+          clamped / PRODUCTIVITY_MIDPOINT,
+        ]
+      : [
+          PRODUCTIVITY_SCALE.middle,
+          PRODUCTIVITY_SCALE.high,
+          (clamped - PRODUCTIVITY_MIDPOINT) / PRODUCTIVITY_MIDPOINT,
+        ];
+  const channel = (position: number) =>
+    Math.round(from[position] + (to[position] - from[position]) * progress);
+  return `rgb(${channel(0)}, ${channel(1)}, ${channel(2)})`;
 }
 
 function groupedSeconds(records: RescueTimeRecord[]) {
-  const grouped = new Map<string, number>()
+  const grouped = new Map<string, number>();
   for (const record of records) {
-    grouped.set(record.label, (grouped.get(record.label) ?? 0) + record.seconds)
+    grouped.set(
+      record.label,
+      (grouped.get(record.label) ?? 0) + record.seconds,
+    );
   }
-  return [...grouped].map(([label, seconds]) => ({ label, seconds }))
+  return [...grouped].map(([label, seconds]) => ({ label, seconds }));
 }
 
 export function buildRescueTimeOverview(records: RescueTimeRecord[]) {
-  const activityRecords = records.filter((record) => record.perspective === 'activity')
-  const productivityRecords = records.filter((record) => record.perspective === 'productivity')
-  const totalTrackedSeconds = activityRecords.reduce((total, record) => total + record.seconds, 0)
-  const productivitySeconds = productivityRecords.reduce((total, record) => total + record.seconds, 0)
-  const weightedProductivity = productivityRecords.reduce(
-    (total, record) => total + (PRODUCTIVITY_WEIGHTS[record.label] ?? 0) * record.seconds,
+  const activityRecords = records.filter(
+    (record) => record.perspective === "activity",
+  );
+  const productivityRecords = records.filter(
+    (record) => record.perspective === "productivity",
+  );
+  const totalTrackedSeconds = activityRecords.reduce(
+    (total, record) => total + record.seconds,
     0,
-  )
+  );
+  const productivitySeconds = productivityRecords.reduce(
+    (total, record) => total + record.seconds,
+    0,
+  );
+  const weightedProductivity = productivityRecords.reduce(
+    (total, record) =>
+      total + (PRODUCTIVITY_WEIGHTS[record.label] ?? 0) * record.seconds,
+    0,
+  );
   const productivityIndex = productivitySeconds
-    ? Math.round(((weightedProductivity / productivitySeconds) + 2) / 4 * 100)
-    : null
+    ? Math.round(
+        ((weightedProductivity / productivitySeconds -
+          PRODUCTIVITY_MIN_WEIGHT) /
+          (PRODUCTIVITY_MAX_WEIGHT - PRODUCTIVITY_MIN_WEIGHT)) *
+          PERCENT_MAX,
+      )
+    : null;
 
   return {
     activityRecords,
@@ -87,7 +124,9 @@ export function buildRescueTimeOverview(records: RescueTimeRecord[]) {
     categories: groupedSeconds(activityRecords)
       .map((category) => ({
         ...category,
-        percentage: totalTrackedSeconds ? category.seconds / totalTrackedSeconds * 100 : 0,
+        percentage: totalTrackedSeconds
+          ? (category.seconds / totalTrackedSeconds) * PERCENT_MAX
+          : 0,
       }))
       .sort((left, right) => right.seconds - left.seconds),
     productivity: groupedSeconds(productivityRecords)
@@ -97,45 +136,53 @@ export function buildRescueTimeOverview(records: RescueTimeRecord[]) {
         name: PRODUCTIVITY_LABELS[level.label] ?? level.label,
       }))
       .sort((left, right) => right.weight - left.weight),
-  }
+  };
 }
 
 export type SourceIndicatorDay = {
-  bracelet: { sleepSeconds: number | null; steps: number | null }
-  welltory: { available: boolean }
-  todoist: { created: number; completed: number; deleted: number }
-  rescuetime: { available: boolean }
+  bracelet: { sleepSeconds: number | null; steps: number | null };
+  welltory: { available: boolean };
+  todoist: { created: number; completed: number; deleted: number };
+  rescuetime: { available: boolean };
   detail?: {
-    braceletMetrics?: unknown[]
-    welltoryMetrics?: unknown[]
-    createdTasks?: unknown[]
-    completedTasks?: unknown[]
-    deletedTasks?: unknown[]
-    rescueTime?: unknown[]
-  }
-}
+    braceletMetrics?: unknown[];
+    welltoryMetrics?: unknown[];
+    createdTasks?: unknown[];
+    completedTasks?: unknown[];
+    deletedTasks?: unknown[];
+    rescueTime?: unknown[];
+  };
+};
 
 export function isSourceAvailable(
   day: SourceIndicatorDay,
-  source: 'bracelet' | 'welltory' | 'todoist' | 'rescuetime',
+  source: "bracelet" | "welltory" | "todoist" | "rescuetime",
 ): boolean {
   switch (source) {
-    case 'bracelet':
+    case "bracelet":
       return (
         day.bracelet.sleepSeconds != null ||
         day.bracelet.steps != null ||
         Boolean(day.detail?.braceletMetrics?.length)
-      )
-    case 'welltory':
-      return Boolean(day.welltory.available || day.detail?.welltoryMetrics?.length)
-    case 'todoist':
+      );
+    case "welltory":
+      return Boolean(
+        day.welltory.available || day.detail?.welltoryMetrics?.length,
+      );
+    case "todoist":
       return (
         day.todoist.created > 0 ||
         day.todoist.completed > 0 ||
         day.todoist.deleted > 0 ||
-        Boolean(day.detail?.createdTasks?.length || day.detail?.completedTasks?.length || day.detail?.deletedTasks?.length)
-      )
-    case 'rescuetime':
-      return Boolean(day.rescuetime.available || day.detail?.rescueTime?.length)
+        Boolean(
+          day.detail?.createdTasks?.length ||
+            day.detail?.completedTasks?.length ||
+            day.detail?.deletedTasks?.length,
+        )
+      );
+    case "rescuetime":
+      return Boolean(
+        day.rescuetime.available || day.detail?.rescueTime?.length,
+      );
   }
 }
