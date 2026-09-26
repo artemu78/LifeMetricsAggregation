@@ -398,7 +398,7 @@ describe("DayTimelineChart", () => {
         ...day.detail,
         emaEvents: [
           { timestamp: "2026-09-24T12:00:00+03:00", status: "pending" },
-          { timestamp: "2026-09-24T12:01:00+03:00", status: "answered" },
+          { timestamp: "2026-09-24T12:01:00+03:00", status: "answered", mood: 4 },
           { timestamp: "2026-09-24T12:02:00+03:00", status: "dismissed" },
           { timestamp: "2026-09-24T12:03:00+03:00", status: "expired" },
         ],
@@ -454,6 +454,26 @@ describe("DayTimelineChart", () => {
     expect(tooltip).toHaveTextContent("настроение: 4/5, энергия: 3/5, фокус: 2/5, стресс: 1/5");
     expect(tooltip).toHaveTextContent("занятие: Work / coding");
     expect(tooltip).toHaveTextContent("заметка: focused session");
+  });
+
+  it("omits unavailable EMA gauge tracks and hides the gauge for activity-only answers", () => {
+    const emaDay: Day = {
+      ...day,
+      detail: {
+        ...day.detail,
+        emaEvents: [
+          { timestamp: "2026-09-24T09:00:00+03:00", status: "answered", mood: 4 },
+          { timestamp: "2026-09-24T10:00:00+03:00", status: "answered", activity: "work_coding", activityLabel: "Work / coding" },
+        ],
+      },
+    };
+    const { container } = render(<DayTimelineChart day={emaDay} timezone="Europe/Moscow" />);
+    const gauges = container.querySelectorAll(".ema-speedometer");
+    expect(gauges).toHaveLength(1);
+    expect(gauges[0].querySelector(".ema-track-mood")).toBeInTheDocument();
+    expect(gauges[0].querySelector(".ema-track-energy")).not.toBeInTheDocument();
+    expect(gauges[0].querySelector(".ema-track-stress")).not.toBeInTheDocument();
+    expect(container.querySelectorAll(".ema-activity-marker")).toHaveLength(1);
   });
 
   it("renders EMA activity as Lucide icon on СОБЫТИЯ track above other events", () => {

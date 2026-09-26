@@ -15,6 +15,9 @@ export function EmaSpeedometer({
   cy,
   onSelect,
 }: EmaSpeedometerProps) {
+  const visibleTracks = EMA_GAUGE_TRACKS.filter(({ name }) => item[name] != null);
+  if (visibleTracks.length === 0) return null;
+
   return (
     <g
       className="ema-speedometer"
@@ -30,12 +33,12 @@ export function EmaSpeedometer({
         height={EMA_GAUGE.hitHeight}
         className="ema-gauge-hit-area"
       />
-      {EMA_GAUGE_TRACKS.map(({ name, radius, color }) => {
+      {visibleTracks.map(({ name, radius, color }) => {
         const value = item[name];
+        if (value == null) return null;
         const arcLength = Math.PI * radius;
         const d = `M ${cx - radius} ${cy} A ${radius} ${radius} 0 0 1 ${cx + radius} ${cy}`;
-        const ratio =
-          value != null ? Math.max(0, Math.min(1, value / EMA_MAX_RATING)) : 0;
+        const ratio = Math.max(0, Math.min(1, value / EMA_MAX_RATING));
         const filledLength = ratio * arcLength;
         return (
           <g key={name} className={`ema-track-${name}`}>

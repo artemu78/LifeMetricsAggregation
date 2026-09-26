@@ -142,7 +142,8 @@ def _read_task_facts(conn, start_utc, end_utc, config, tz, facts):
 
 def _read_ema_facts(conn, start_utc, end_utc, config, tz, facts):
     for row in conn.execute(
-        """SELECT scheduled_at, status, mood, energy, focus, stress, activity, note
+        """SELECT scheduled_at, status, mood, energy, focus, stress,
+                  activity, activity_label, note
         FROM ema_events WHERE scheduled_at >= ? AND scheduled_at < ?
         ORDER BY scheduled_at""",
         (start_utc, end_utc),
@@ -151,6 +152,8 @@ def _read_ema_facts(conn, start_utc, end_utc, config, tz, facts):
         for key in ("mood", "energy", "focus", "stress", "activity", "note"):
             if row[key] is not None:
                 item[key] = row[key]
+        if row["activity_label"] is not None:
+            item["activityLabel"] = row["activity_label"]
         facts.ema_events[_logical_date(row["scheduled_at"], config, tz)].append(item)
 
 

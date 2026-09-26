@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import gzip
 import json
+import re
+from dataclasses import dataclass
+from datetime import date
 from datetime import datetime, timedelta
 from hashlib import sha256
 from pathlib import Path
@@ -12,11 +15,6 @@ from .db import connect, insert_metric, utc_now
 from .import_support import as_utc_iso, file_hash
 
 EMA_DETAILS_BACKFILL_VERSION = 1
-
-
-def _ema_rating(value: object) -> int | None:
-    """Keep only valid EMA ratings; malformed optional answers remain unavailable."""
-    return value if type(value) is int and 1 <= value <= 5 else None
 
 
 SLEEP_STAGES = {
@@ -172,24 +170,135 @@ def _fitness_manifest(config: Config) -> dict[str, dict]:
 
 
 MetricRow = tuple[str, str, str, float, str, dict]
-EmaRow = tuple[
-    str,
-    str,
-    str | None,
-    str,
-    int | None,
-    int | None,
-    int | None,
-    int | None,
-    str | None,
-    str | None,
-]
+EMA_STATUSES = {"pending", "answered", "dismissed", "expired"}
+EMA_RATING_FIELDS = ("mood", "energy", "focus", "stress")
+EMA_ANSWER_FIELDS = {
+    "answeredAt",
+    *EMA_RATING_FIELDS,
+    "activity",
+    "activityLabel",
+    "note",
+    "additionalAnswers",
+}
+
+
+@dataclass(frozen=True)
+class EmaRow:
+    event_id: str
+    schema_version: int
+    scheduled_at: str
+    answered_at: str | None
+    status: str
+    mood: int | None
+    energy: int | None
+    focus: int | None
+    stress: int | None
+    activity: str | None
+    activity_label: str | None
+    note: str | None
+    payload_json: str
+
+
+def _invalid_ema(path: Path) -> ValueError:
+    return ValueError(f"Invalid EMA event in {path.name}")
+
+
+def _ema_identity(event: dict, path: Path) -> tuple[int, str, str, str]:
+    schema_version = event.get("schemaVersion")
+    event_id = event.get("id")
+    schedule_date = event.get("scheduleDate")
+    scheduled_at = event.get("scheduledAt")
+    timezone_name = event.get("timezone")
+    if (
+        type(schema_version) is not int
+        or schema_version not in {1, 2}
+        or not isinstance(event_id, str)
+        or not re.fullmatch(r"[A-Za-z0-9_-]{1,100}", event_id)
+        or not isinstance(schedule_date, str)
+        or not isinstance(scheduled_at, str)
+        or not isinstance(timezone_name, str)
+        or not timezone_name.strip()
+        or event.get("status") not in EMA_STATUSES
+    ):
+        raise _invalid_ema(path)
+    try:
+        date.fromisoformat(schedule_date)
+    except ValueError:
+        raise _invalid_ema(path) from None
+    return schema_version, event_id, scheduled_at, event["status"]
+
+
+def _ema_ratings(event: dict, path: Path) -> dict[str, int | None]:
+    ratings: dict[str, int | None] = {}
+    for key in EMA_RATING_FIELDS:
+        value = event.get(key)
+        if key in event and (type(value) is not int or not 1 <= value <= 5):
+            raise _invalid_ema(path)
+        ratings[key] = value
+    return ratings
+
+
+def _ema_optional_text(
+    event: dict, key: str, path: Path, *, max_length: int | None = None
+) -> str | None:
+    if key not in event:
+        return None
+    value = event[key]
+    if not isinstance(value, str) or not value.strip():
+        raise _invalid_ema(path)
+    if max_length is not None and len(value) > max_length:
+        raise _invalid_ema(path)
+    return value
+
+
+def _validate_ema_additional_answers(event: dict, path: Path) -> None:
+    if "additionalAnswers" not in event:
+        return
+    answers = event["additionalAnswers"]
+    if not isinstance(answers, dict) or any(
+        key in EMA_RATING_FIELDS or type(value) is not int
+        for key, value in answers.items()
+    ):
+        raise _invalid_ema(path)
+
+
+def _ema_answered_at(
+    event: dict,
+    path: Path,
+    schema_version: int,
+    status: str,
+    ratings: dict[str, int | None],
+    activity: str | None,
+) -> str | None:
+    if status != "answered":
+        if EMA_ANSWER_FIELDS.intersection(event):
+            raise _invalid_ema(path)
+        return None
+    answered_at = event.get("answeredAt")
+    if not isinstance(answered_at, str):
+        raise _invalid_ema(path)
+    has_all_v1_answers = activity is not None and all(
+        ratings[key] is not None for key in EMA_RATING_FIELDS
+    )
+    has_meaningful_v2_answer = activity is not None or any(
+        ratings[key] is not None for key in EMA_RATING_FIELDS
+    )
+    if schema_version == 1 and not has_all_v1_answers:
+        raise _invalid_ema(path)
+    if schema_version == 2 and not has_meaningful_v2_answer:
+        raise _invalid_ema(path)
+    return answered_at
 
 
 def _validate_fitness_document(
     path: Path, document: dict
 ) -> tuple[list[dict], list[dict]]:
     """Validate a document header and return its health and EMA records."""
+    if "exportSchemaVersion" in document and document["exportSchemaVersion"] != 1:
+        raise ValueError(
+            f"Unsupported export schema in {path.name}: "
+            f"{document['exportSchemaVersion']}"
+        )
     batch, records, ema_events = _fitness_batch(document)
     header = batch.get("header", {})
     if header.get("schemaVersion") != 1:
@@ -257,41 +366,33 @@ def _stage_record_metrics(
 
 def _stage_ema_event(event: dict, path: Path, timezone_name: str) -> EmaRow:
     """Validate one EMA event and normalize it for the database schema."""
-    event_id = event.get("id")
-    scheduled_at = event.get("scheduledAt")
-    status = event.get("status")
-    if (
-        not event_id
-        or not scheduled_at
-        or status
-        not in {
-            "pending",
-            "answered",
-            "dismissed",
-            "expired",
-        }
-    ):
-        raise ValueError(f"Invalid EMA event in {path.name}")
+    schema_version, event_id, scheduled_at, status = _ema_identity(event, path)
     answered = status == "answered"
+    ratings = _ema_ratings(event, path)
+    activity = _ema_optional_text(event, "activity", path)
+    activity_label = _ema_optional_text(event, "activityLabel", path)
+    note = _ema_optional_text(event, "note", path, max_length=280)
+    if activity_label is not None and activity is None:
+        raise _invalid_ema(path)
+    _validate_ema_additional_answers(event, path)
+    answered_at = _ema_answered_at(
+        event, path, schema_version, status, ratings, activity
+    )
 
-    def rating(key: str) -> int | None:
-        return _ema_rating(event.get(key)) if answered else None
-
-    def optional_text(key: str) -> str | None:
-        return str(event[key]) if answered and event.get(key) is not None else None
-
-    answered_at = event.get("answeredAt")
-    return (
-        str(event_id),
-        as_utc_iso(scheduled_at, timezone_name),
-        as_utc_iso(answered_at, timezone_name) if answered_at else None,
-        status,
-        rating("mood"),
-        rating("energy"),
-        rating("focus"),
-        rating("stress"),
-        optional_text("activity"),
-        optional_text("note"),
+    return EmaRow(
+        event_id=event_id,
+        schema_version=schema_version,
+        scheduled_at=as_utc_iso(scheduled_at, timezone_name),
+        answered_at=as_utc_iso(answered_at, timezone_name) if answered_at else None,
+        status=status,
+        mood=ratings["mood"] if answered else None,
+        energy=ratings["energy"] if answered else None,
+        focus=ratings["focus"] if answered else None,
+        stress=ratings["stress"] if answered else None,
+        activity=activity if answered else None,
+        activity_label=activity_label if answered else None,
+        note=note if answered else None,
+        payload_json=json.dumps(event, ensure_ascii=False, sort_keys=True),
     )
 
 
@@ -300,7 +401,7 @@ def _stage_fitness_file(
 ) -> tuple[list[MetricRow], list[EmaRow], int, set[str]]:
     """Validate one cached export and prepare its database rows without writing."""
     metric_rows: list[MetricRow] = []
-    ema_rows: list[EmaRow] = []
+    ema_rows_by_id: dict[str, EmaRow] = {}
     affected_dates: set[str] = set()
     records = 0
     for document in _fitness_documents(path):
@@ -313,8 +414,10 @@ def _stage_fitness_file(
         for event in ema_events:
             if not isinstance(event, dict):
                 raise ValueError(f"Invalid EMA event in {path.name}")
-            ema_rows.append(_stage_ema_event(event, path, config.timezone))
-    return metric_rows, ema_rows, records, affected_dates
+            row = _stage_ema_event(event, path, config.timezone)
+            # Within one export, the last revision of a stable event identity wins.
+            ema_rows_by_id[row.event_id] = row
+    return metric_rows, list(ema_rows_by_id.values()), records, affected_dates
 
 
 def _store_fitness_projection(
@@ -377,10 +480,25 @@ def _store_ema_rows(conn, path: Path, rows: list[EmaRow]) -> None:
     for row in rows:
         conn.execute(
             """INSERT OR IGNORE INTO ema_events
-            (event_id, scheduled_at, answered_at, status, origin_file,
-             mood, energy, focus, stress, activity, note)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (row[0], row[1], row[2], row[3], str(path), *row[4:]),
+            (event_id, schema_version, scheduled_at, answered_at, status, origin_file,
+             mood, energy, focus, stress, activity, activity_label, note, payload_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                row.event_id,
+                row.schema_version,
+                row.scheduled_at,
+                row.answered_at,
+                row.status,
+                str(path),
+                row.mood,
+                row.energy,
+                row.focus,
+                row.stress,
+                row.activity,
+                row.activity_label,
+                row.note,
+                row.payload_json,
+            ),
         )
 
 
