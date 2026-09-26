@@ -16,10 +16,10 @@ import type { DashboardDay } from "../store";
 export function RescueTimePanel({
   day,
   timezone,
-}: {
+}: Readonly<{
   day: DashboardDay;
   timezone: string;
-}) {
+}>) {
   const rescueOverview = buildRescueTimeOverview(day.detail.rescueTime);
   const rescueIntervals = [...rescueOverview.activityRecords].sort(
     (left, right) => left.timestamp.localeCompare(right.timestamp),
@@ -65,9 +65,9 @@ type RescueOverview = ReturnType<typeof buildRescueTimeOverview>;
 
 function ProductivitySummary({
   rescueOverview,
-}: {
+}: Readonly<{
   rescueOverview: RescueOverview;
-}) {
+}>) {
   return (
     <div className="productivity-summary">
       <h4>Индекс продуктивности</h4>
@@ -132,9 +132,9 @@ function ProductivitySummary({
 
 function ActivityRanking({
   rescueOverview,
-}: {
+}: Readonly<{
   rescueOverview: RescueOverview;
-}) {
+}>) {
   return (
     <div className="activity-ranking">
       <h4>Основные активности</h4>
@@ -165,10 +165,10 @@ function ActivityRanking({
 function ActivityIntervals({
   rescueIntervals,
   timezone,
-}: {
+}: Readonly<{
   rescueIntervals: RescueOverview["activityRecords"];
   timezone: string;
-}) {
+}>) {
   return (
     <div className="rescuetime-intervals">
       <h4>Интервалы активности</h4>

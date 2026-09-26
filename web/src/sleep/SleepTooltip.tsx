@@ -16,7 +16,7 @@ export type SleepHoverInfo = {
   phaseConfig: SleepPhaseConfig;
   durationStr: string;
 };
-export function SleepTooltip({ hoverInfo }: { hoverInfo: SleepHoverInfo }) {
+export function SleepTooltip({ hoverInfo }: Readonly<{ hoverInfo: SleepHoverInfo }>) {
   const tooltipWidth = SLEEP_TOOLTIP.width;
   const tooltipHeight = SLEEP_TOOLTIP.height;
   const tooltipX = Math.max(

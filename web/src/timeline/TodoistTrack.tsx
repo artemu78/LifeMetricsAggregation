@@ -16,7 +16,7 @@ export function TodoistTrack({
   todoistIconPositions,
   timezone,
   selectAtCursor,
-}: Props) {
+}: Readonly<Props>) {
   const todoistClusterItem = (cluster: TodoistCluster): RecordItem => ({
     start: cluster.events[0].start,
     end: cluster.events.at(-1)!.start,

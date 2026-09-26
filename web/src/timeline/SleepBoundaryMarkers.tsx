@@ -17,7 +17,7 @@ export function SleepBoundaryMarkers({
   timezone,
   x,
   onSelect,
-}: Props) {
+}: Readonly<Props>) {
   const boundaries = [
     {
       time: bedtime,

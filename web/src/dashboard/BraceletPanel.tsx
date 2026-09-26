@@ -5,10 +5,10 @@ import type { DashboardDay } from "../store";
 export function BraceletPanel({
   day,
   timezone,
-}: {
+}: Readonly<{
   day: DashboardDay;
   timezone: string;
-}) {
+}>) {
   const sleep = day.detail.braceletMetrics.filter((point) =>
     point.metric.startsWith("fitness_drive.sleep."),
   );

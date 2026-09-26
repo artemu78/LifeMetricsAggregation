@@ -16,7 +16,7 @@ export function WorkoutsTrack({
   end,
   x,
   selectAtCursor,
-}: Props) {
+}: Readonly<Props>) {
   return (
     <>
       {visibleWorkoutSegments.map((item) => {

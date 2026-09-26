@@ -51,7 +51,7 @@ function buildHeartGeometry(heart: HeartPoint[], x: Props["x"]) {
   return { heartY, heartPath };
 }
 
-export function HeartTrack({ heart, x, timezone }: Props) {
+export function HeartTrack({ heart, x, timezone }: Readonly<Props>) {
   const clipId = useId();
   const [hoveredHeart, setHoveredHeart] = useState<HeartPoint | null>(null);
   const { heartY, heartPath } = useMemo(

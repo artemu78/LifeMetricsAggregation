@@ -1,5 +1,5 @@
 type Props = { disabled: boolean; upload: (file: File) => Promise<void> };
-export function DriveSetupInstructions({ disabled, upload }: Props) {
+export function DriveSetupInstructions({ disabled, upload }: Readonly<Props>) {
   return (
     <details>
       <summary>Настроить Google Cloud или заменить удалённый проект</summary>
@@ -25,8 +25,7 @@ export function DriveSetupInstructions({ disabled, upload }: Props) {
             rel="noreferrer"
           >
             включите Google Drive API
-          </a>
-          .
+          </a>.
         </li>
         <li>
           В Google Auth Platform заполните Branding и настройте{" "}
@@ -36,8 +35,7 @@ export function DriveSetupInstructions({ disabled, upload }: Props) {
             rel="noreferrer"
           >
             Audience
-          </a>
-          . В режиме Testing добавьте свой аккаунт в Test users. Разрешение на
+          </a>. В режиме Testing добавьте свой аккаунт в Test users. Разрешение на
           Drive в этом режиме обычно действует 7 дней. Для постоянного
           использования рассмотрите Production; требования проверки определяет
           Google.

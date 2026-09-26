@@ -59,9 +59,9 @@ export const Dashboard = observer(function Dashboard() {
       <Suspense
         fallback={
           <div className="modal-backdrop">
-            <p className="loading" role="status">
+            <output className="loading">
               Загружаем подробности дня…
-            </p>
+            </output>
           </div>
         }
       >

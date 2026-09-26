@@ -15,7 +15,7 @@ import {
 } from "./timelineConfig";
 
 type Props = { ticks: number[]; x: (time: number) => number };
-export function TimelineGrid({ ticks, x }: Props) {
+export function TimelineGrid({ ticks, x }: Readonly<Props>) {
   return (
     <>
       {HEART_GRID_ROWS.map((y) => (

@@ -4,10 +4,10 @@ import type { DashboardDay } from "../store";
 export function WelltoryPanel({
   day,
   timezone,
-}: {
+}: Readonly<{
   day: DashboardDay;
   timezone: string;
-}) {
+}>) {
   return (
     <section className="panel welltory-panel">
       <h3>Welltory</h3>

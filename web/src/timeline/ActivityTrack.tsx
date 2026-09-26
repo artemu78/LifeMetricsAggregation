@@ -21,7 +21,7 @@ export function ActivityTrack({
   end,
   x,
   selectAtCursor,
-}: Props) {
+}: Readonly<Props>) {
   return (
     <>
       {activitySegments

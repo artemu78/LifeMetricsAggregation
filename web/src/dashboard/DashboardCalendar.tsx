@@ -11,7 +11,7 @@ function monthLabel(date: string) {
   return label.charAt(0).toUpperCase() + label.slice(1);
 }
 
-export function DashboardCalendar({ days }: { days: DashboardDay[] }) {
+export function DashboardCalendar({ days }: Readonly<{ days: DashboardDay[] }>) {
   const monthGroups = days.reduce<
     Array<{
       key: string;
@@ -19,7 +19,7 @@ export function DashboardCalendar({ days }: { days: DashboardDay[] }) {
     }>
   >((groups, day) => {
     const key = day.date.slice(0, ISO_MONTH_LENGTH);
-    const current = groups[groups.length - 1];
+    const current = groups.at(-1);
     if (current?.key === key) current.days.push(day);
     else groups.push({ key, days: [day] });
     return groups;

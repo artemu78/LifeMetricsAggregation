@@ -19,10 +19,10 @@ import { WelltoryPanel } from "./WelltoryPanel";
 export function DayModal({
   day,
   timezone,
-}: {
+}: Readonly<{
   day: DashboardDay;
   timezone: DashboardResponse["timezone"];
-}) {
+}>) {
   const modalRef = useRef<HTMLDialogElement>(null);
   const navigate = useNavigate();
   const days = store.dashboard?.days ?? [];

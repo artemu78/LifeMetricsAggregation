@@ -11,7 +11,7 @@ import {
 import type { DashboardDay } from "../store";
 import { QUALITY, SOURCE_ICONS, WEEKDAYS } from "./dashboardConfig";
 
-export function CalendarCell({ day }: { day: DashboardDay }) {
+export function CalendarCell({ day }: Readonly<{ day: DashboardDay }>) {
   const date = new Date(`${day.date}T12:00:00Z`);
   const rescueOverview = buildRescueTimeOverview(day.detail.rescueTime);
   const trackedDuration = formatTrackedDuration(
@@ -45,7 +45,7 @@ export function CalendarCell({ day }: { day: DashboardDay }) {
   );
 }
 
-function SourceIndicators({ day }: { day: DashboardDay }) {
+function SourceIndicators({ day }: Readonly<{ day: DashboardDay }>) {
   return (
     <div className="indicators" aria-label="Источники">
       {SOURCE_ICONS.map(({ key, name, Icon }) => {
@@ -69,11 +69,11 @@ function CalendarMetrics({
   day,
   trackedDuration,
   hasTrackedTime,
-}: {
+}: Readonly<{
   day: DashboardDay;
   trackedDuration: string;
   hasTrackedTime: boolean;
-}) {
+}>) {
   return (
     <div className="numbers">
       <div>
@@ -122,7 +122,7 @@ function CalendarMetrics({
   );
 }
 
-function ProductivityMarker({ index }: { index: number | null }) {
+function ProductivityMarker({ index }: Readonly<{ index: number | null }>) {
   const color = index == null ? undefined : productivityIndexColor(index);
   return (
     <div className="calendar-rescuetime" aria-hidden="true">

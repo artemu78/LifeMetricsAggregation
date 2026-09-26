@@ -4,10 +4,10 @@ import type { DashboardDay } from "../store";
 export function TodoistPanel({
   day,
   timezone,
-}: {
+}: Readonly<{
   day: DashboardDay;
   timezone: string;
-}) {
+}>) {
   return (
     <section className="panel">
       <h3>Todoist</h3>
@@ -32,11 +32,11 @@ function TaskRecords({
   title,
   tasks,
   timezone,
-}: {
+}: Readonly<{
   title: string;
   tasks: DashboardDay["detail"]["createdTasks"];
   timezone: string;
-}) {
+}>) {
   return (
     <>
       <h4>{title}</h4>

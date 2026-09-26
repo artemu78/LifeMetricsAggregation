@@ -45,7 +45,7 @@ type SleepChartProps = {
   geometry: SleepGeometry;
   timezone: string;
 };
-function SleepChart({ intervals, geometry, timezone }: SleepChartProps) {
+function SleepChart({ intervals, geometry, timezone }: Readonly<SleepChartProps>) {
   const idPrefix = useId().replaceAll(":", "");
   const lineGradientId = `sleep-line-gradient-${idPrefix}`;
   const areaGradientId = `sleep-area-gradient-${idPrefix}`;

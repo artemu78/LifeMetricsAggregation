@@ -23,7 +23,7 @@ export function StepsTrack({
   x,
   maxStepCount,
   selectAtCursor,
-}: Props) {
+}: Readonly<Props>) {
   return (
     <>
       {stepSeries

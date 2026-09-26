@@ -23,7 +23,7 @@ export function TimelineAxis({
   cursorX,
   cursorLabelX,
   cursorTime,
-}: Props) {
+}: Readonly<Props>) {
   return (
     <>
       <line

@@ -1,4 +1,3 @@
-import { METRIC_GRID } from "../shared/chartConfig";
 import {
   CartesianGrid,
   Line,
@@ -11,6 +10,7 @@ import {
 import {
   DETAIL_CHART_HEIGHT,
   METRIC_AXIS_WIDTH,
+  METRIC_GRID,
   METRIC_LINE_WIDTH,
   METRIC_TICK_GAP,
 } from "../shared/chartConfig";
@@ -22,13 +22,13 @@ export function MetricChart({
   color,
   title,
   timezone,
-}: {
+}: Readonly<{
   day: DashboardDay;
   metric: string;
   color: string;
   title: string;
   timezone: DashboardResponse["timezone"];
-}) {
+}>) {
   const data = day.detail.braceletMetrics
     .filter((point) => point.metric === metric && point.value != null)
     .map((point) => ({

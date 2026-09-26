@@ -8,7 +8,7 @@ type Props = {
   selectAtCursor: (item: RecordItem, event: MouseEvent<Element>) => void;
 };
 
-export function EventsTrack({ visibleEvents, x, selectAtCursor }: Props) {
+export function EventsTrack({ visibleEvents, x, selectAtCursor }: Readonly<Props>) {
   const markers = new Map<string, number>();
   return (
     <>

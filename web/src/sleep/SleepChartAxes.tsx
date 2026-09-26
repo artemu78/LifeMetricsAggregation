@@ -14,48 +14,46 @@ import { SLEEP_PHASES } from "./sleepModel";
 export function SleepGradients({
   lineGradientId,
   areaGradientId,
-}: {
+}: Readonly<{
   lineGradientId: string;
   areaGradientId: string;
-}) {
+}>) {
   return (
-    <>
-      <defs>
-        <linearGradient
-          id={lineGradientId}
-          gradientUnits="userSpaceOnUse"
-          x1="0"
-          y1={BOTTOM}
-          x2="0"
-          y2={TOP}
-        >
-          {SLEEP_GRADIENT_STOPS.map((stop) => (
-            <stop
-              key={stop.offset}
-              offset={stop.offset}
-              stopColor={stop.color}
-            />
-          ))}
-        </linearGradient>
-        <linearGradient
-          id={areaGradientId}
-          gradientUnits="userSpaceOnUse"
-          x1="0"
-          y1={BOTTOM}
-          x2="0"
-          y2={TOP}
-        >
-          {SLEEP_GRADIENT_STOPS.map((stop) => (
-            <stop
-              key={stop.offset}
-              offset={stop.offset}
-              stopColor={stop.color}
-              stopOpacity={stop.opacity}
-            />
-          ))}
-        </linearGradient>
-      </defs>
-    </>
+    <defs>
+      <linearGradient
+        id={lineGradientId}
+        gradientUnits="userSpaceOnUse"
+        x1="0"
+        y1={BOTTOM}
+        x2="0"
+        y2={TOP}
+      >
+        {SLEEP_GRADIENT_STOPS.map((stop) => (
+          <stop
+            key={stop.offset}
+            offset={stop.offset}
+            stopColor={stop.color}
+          />
+        ))}
+      </linearGradient>
+      <linearGradient
+        id={areaGradientId}
+        gradientUnits="userSpaceOnUse"
+        x1="0"
+        y1={BOTTOM}
+        x2="0"
+        y2={TOP}
+      >
+        {SLEEP_GRADIENT_STOPS.map((stop) => (
+          <stop
+            key={stop.offset}
+            offset={stop.offset}
+            stopColor={stop.color}
+            stopOpacity={stop.opacity}
+          />
+        ))}
+      </linearGradient>
+    </defs>
   );
 }
 
@@ -99,7 +97,7 @@ export function SleepPhaseAxis() {
   );
 }
 
-export function SleepTimeAxis({ ticks }: { ticks: SleepGeometry["ticks"] }) {
+export function SleepTimeAxis({ ticks }: Readonly<{ ticks: SleepGeometry["ticks"] }>) {
   return (
     <>
       {ticks.map((tick) => (

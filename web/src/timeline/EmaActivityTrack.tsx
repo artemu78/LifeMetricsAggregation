@@ -13,7 +13,7 @@ export function EmaActivityTrack({
   visibleEmaEvents,
   x,
   selectAtCursor,
-}: Props) {
+}: Readonly<Props>) {
   return (
     <>
       {visibleEmaEvents
