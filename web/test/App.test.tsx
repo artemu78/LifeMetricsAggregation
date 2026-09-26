@@ -1,9 +1,14 @@
 import React from 'react'
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor, act, cleanup, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { App } from '../src/App'
 import { dashboardStore as store, type DashboardDay, type DashboardResponse } from '../src/store'
+
+beforeAll(async () => {
+  // Keep cold module transformation out of lazy-route assertion timeouts in CI.
+  await import('../src/dashboard/DayRoutes')
+})
 
 function createSampleDashboard(): DashboardResponse {
   const fullDay: DashboardDay = {
