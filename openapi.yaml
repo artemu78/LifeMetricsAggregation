@@ -223,8 +223,14 @@ components:
           maximum: 5
         activity:
           type: string
+          minLength: 1
+        activityLabel:
+          type: string
+          minLength: 1
         note:
           type: string
+          minLength: 1
+          maxLength: 280
     RescueTimeItem:
       type: object
       additionalProperties: false

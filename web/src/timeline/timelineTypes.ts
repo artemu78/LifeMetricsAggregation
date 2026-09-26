@@ -15,6 +15,7 @@ export type EmaRecordItem = RecordItem & {
   stress?: number;
   focus?: number;
   activity?: string;
+  activityLabel?: string;
   note?: string;
 };
 export type TodoistCluster = {

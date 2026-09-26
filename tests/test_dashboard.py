@@ -272,10 +272,12 @@ class DashboardTest(unittest.TestCase):
             self.assertEqual(row["stress"], 1)
             self.assertEqual(row["activity"], "work_coding")
             self.assertEqual(row["note"], "deep focus")
-            # Verify activity_label and payload_json columns do not exist
+            self.assertEqual(row["schema_version"], 1)
+            self.assertEqual(row["activity_label"], "Work / coding")
+            self.assertEqual(json.loads(row["payload_json"])["timezone"], "Europe/Moscow")
             columns = {col["name"] for col in conn.execute("PRAGMA table_info(ema_events)")}
-            self.assertNotIn("activity_label", columns)
-            self.assertNotIn("payload_json", columns)
+            self.assertIn("activity_label", columns)
+            self.assertIn("payload_json", columns)
 
         dashboard = build_dashboard(self.config, date(2026, 9, 10), date(2026, 9, 10))
         ema_items = dashboard["days"][0]["detail"]["emaEvents"]
@@ -286,6 +288,7 @@ class DashboardTest(unittest.TestCase):
         self.assertEqual(ema_items[0]["focus"], 2)
         self.assertEqual(ema_items[0]["stress"], 1)
         self.assertEqual(ema_items[0]["activity"], "work_coding")
+        self.assertEqual(ema_items[0]["activityLabel"], "Work / coding")
         self.assertEqual(ema_items[0]["note"], "deep focus")
 
         self.assertFalse(import_fitness_drive(self.config)["rebuild"])
@@ -301,45 +304,108 @@ class DashboardTest(unittest.TestCase):
             self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0], 1)
         self.assertFalse(import_fitness_drive(self.config)["rebuild"])
 
-    def test_ema_invalid_ratings_are_ignored_without_repeated_rebuilds(self):
-        (self.cache / "drive-ema--invalid.json").write_text(
+    def test_ema_v2_preserves_partial_answers_and_missing_values(self):
+        (self.cache / "drive-ema--partial.json").write_text(
             json.dumps(
                 {
                     "header": {"schemaVersion": 1, "recordCount": 0},
                     "records": [],
                     "emaEvents": [
                         {
-                            "id": "invalid-ratings",
+                            "schemaVersion": 2,
+                            "id": "mood-only",
+                            "scheduleDate": "2026-09-10",
                             "scheduledAt": "2026-09-10T12:00:00Z",
+                            "answeredAt": "2026-09-10T12:01:00Z",
                             "status": "answered",
-                            "mood": "abc",
-                            "energy": 4.7,
-                            "focus": True,
-                            "stress": 6,
+                            "mood": 4,
+                            "timezone": "Europe/Moscow",
+                            "futureProperty": {"preserved": True},
                         },
                         {
-                            "id": "valid-and-missing-ratings",
+                            "schemaVersion": 2,
+                            "id": "activity-only",
+                            "scheduleDate": "2026-09-10",
                             "scheduledAt": "2026-09-10T13:00:00Z",
+                            "answeredAt": "2026-09-10T13:01:00Z",
                             "status": "answered",
-                            "mood": None,
-                            "energy": 0,
-                            "focus": 1,
-                            "stress": 5,
+                            "activity": "work_coding",
+                            "activityLabel": "Work / coding",
+                            "timezone": "Europe/Moscow",
                         },
                     ],
                 }
             )
         )
-        self.assertTrue(import_fitness_drive(self.config)["rebuild"])
+        import_fitness_drive(self.config)
         with connect(self.config.database) as conn:
             rows = conn.execute(
-                "SELECT event_id, mood, energy, focus, stress FROM ema_events ORDER BY event_id"
+                "SELECT event_id, schema_version, mood, energy, focus, stress, "
+                "activity, activity_label, payload_json FROM ema_events ORDER BY event_id"
             ).fetchall()
-            self.assertEqual(tuple(rows[0]), ("invalid-ratings", None, None, None, None))
-            self.assertEqual(tuple(rows[1]), ("valid-and-missing-ratings", None, None, 1, 5))
+            self.assertEqual(tuple(rows[0])[:-1], ("activity-only", 2, None, None, None, None, "work_coding", "Work / coding"))
+            self.assertEqual(tuple(rows[1])[:-1], ("mood-only", 2, 4, None, None, None, None, None))
+            self.assertTrue(json.loads(rows[1]["payload_json"])["futureProperty"]["preserved"])
         dashboard = build_dashboard(self.config, date(2026, 9, 10), date(2026, 9, 10))
         DashboardResponse.model_validate(dashboard)
-        self.assertFalse(import_fitness_drive(self.config)["rebuild"])
+        by_time = dashboard["days"][0]["detail"]["emaEvents"]
+        self.assertEqual(by_time[0]["mood"], 4)
+        self.assertNotIn("energy", by_time[0])
+        self.assertEqual(by_time[1]["activityLabel"], "Work / coding")
+
+    def test_ema_rejects_invalid_versioned_answers_atomically(self):
+        invalid_events = [
+            {"schemaVersion": 2, "status": "answered", "answeredAt": "2026-09-10T12:01:00Z", "mood": 0},
+            {"schemaVersion": 2, "status": "answered", "answeredAt": "2026-09-10T12:01:00Z", "note": "note only"},
+            {"schemaVersion": 2, "status": "answered", "answeredAt": "2026-09-10T12:01:00Z", "activityLabel": "Work / coding"},
+            {"schemaVersion": 1, "status": "answered", "answeredAt": "2026-09-10T12:01:00Z", "mood": 4},
+            {"schemaVersion": 3, "status": "pending"},
+            {"schemaVersion": 2, "status": "pending", "mood": 4},
+        ]
+        for index, invalid in enumerate(invalid_events):
+            event = {
+                "id": f"invalid-{index}",
+                "scheduleDate": "2026-09-10",
+                "scheduledAt": "2026-09-10T12:00:00Z",
+                "timezone": "Europe/Moscow",
+                **invalid,
+            }
+            path = self.cache / f"drive-ema--invalid-{index}.json"
+            path.write_text(json.dumps({"header": {"schemaVersion": 1, "recordCount": 0}, "records": [], "emaEvents": [event]}))
+            with self.assertRaisesRegex(ValueError, "Invalid EMA event"):
+                import_fitness_drive(self.config)
+            path.unlink()
+        with connect(self.config.database) as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM ema_events").fetchone()[0], 0)
+
+    def test_ema_retry_replaces_previous_revision_by_id(self):
+        path = self.cache / "drive-ema--retry.json"
+
+        def write_revision(mood: int) -> None:
+            path.write_text(json.dumps({
+                "exportSchemaVersion": 1,
+                "healthConnectBatch": {"header": {"schemaVersion": 1, "recordCount": 0}, "records": []},
+                "emaEvents": [{
+                    "schemaVersion": 2,
+                    "id": "stable-event-id",
+                    "scheduleDate": "2026-09-10",
+                    "scheduledAt": "2026-09-10T12:00:00Z",
+                    "answeredAt": "2026-09-10T12:01:00Z",
+                    "status": "answered",
+                    "mood": mood,
+                    "timezone": "Europe/Moscow",
+                }],
+            }))
+
+        write_revision(2)
+        import_fitness_drive(self.config)
+        write_revision(5)
+        import_fitness_drive(self.config)
+        with connect(self.config.database) as conn:
+            rows = conn.execute(
+                "SELECT event_id, mood FROM ema_events WHERE event_id = 'stable-event-id'"
+            ).fetchall()
+        self.assertEqual([tuple(row) for row in rows], [("stable-event-id", 5)])
 
     def test_overlapping_fitness_files_deduplicate_and_exclude_awake_seconds(self):
         file1 = self.cache / "sync-file-1.json"

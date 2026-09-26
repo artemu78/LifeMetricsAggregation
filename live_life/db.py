@@ -26,6 +26,7 @@ CREATE INDEX IF NOT EXISTS idx_metric_name ON metric_events(metric);
 
 CREATE TABLE IF NOT EXISTS ema_events (
     event_id TEXT PRIMARY KEY,
+    schema_version INTEGER NOT NULL,
     scheduled_at TEXT NOT NULL,
     answered_at TEXT,
     status TEXT NOT NULL,
@@ -35,7 +36,9 @@ CREATE TABLE IF NOT EXISTS ema_events (
     focus INTEGER,
     stress INTEGER,
     activity TEXT,
-    note TEXT
+    activity_label TEXT,
+    note TEXT,
+    payload_json TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_ema_scheduled_at ON ema_events(scheduled_at);
 
@@ -129,6 +132,11 @@ def _migrate(conn: sqlite3.Connection) -> None:
     _ensure_column(conn, "ema_events", "stress", "INTEGER")
     _ensure_column(conn, "ema_events", "activity", "TEXT")
     _ensure_column(conn, "ema_events", "note", "TEXT")
+    _ensure_column(conn, "ema_events", "schema_version", "INTEGER")
+    _ensure_column(conn, "ema_events", "activity_label", "TEXT")
+    _ensure_column(conn, "ema_events", "payload_json", "TEXT")
+    conn.execute("UPDATE ema_events SET schema_version = 1 WHERE schema_version IS NULL")
+    conn.execute("UPDATE ema_events SET payload_json = '{}' WHERE payload_json IS NULL")
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_metric_origin_file ON metric_events(origin_file)"
     )
