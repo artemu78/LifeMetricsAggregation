@@ -39,6 +39,43 @@ def _number(value: str) -> float | None:
         return None
 
 
+def _import_welltory_row(conn, row: dict, timezone_name: str) -> tuple[int, int]:
+    timestamp = row.get("Date") or row.get("Time")
+    if not timestamp:
+        return 0, 0
+    occurred_at = as_utc_iso(timestamp, timezone_name)
+    row_id = sha256(json.dumps(row, sort_keys=True).encode("utf-8")).hexdigest()
+    metrics = 0
+    for name, raw_value in row.items():
+        if name in {"Date", "Time"} or raw_value is None or not raw_value.strip():
+            continue
+        numeric = _number(raw_value)
+        metrics += insert_metric(
+            conn,
+            source="welltory",
+            external_id=row_id,
+            occurred_at=occurred_at,
+            metric=f"welltory.{name}",
+            value_num=numeric,
+            value_text=None if numeric is not None else raw_value.strip(),
+            unit=UNITS.get(name),
+            payload=row,
+        )
+    return 1, metrics
+
+
+def _import_welltory_csv(conn, path: Path, timezone_name: str) -> tuple[int, int]:
+    rows = metrics = 0
+    with path.open(newline="", encoding="utf-8-sig") as handle:
+        for row in csv.DictReader(handle):
+            imported_rows, imported_metrics = _import_welltory_row(
+                conn, row, timezone_name
+            )
+            rows += imported_rows
+            metrics += imported_metrics
+    return rows, metrics
+
+
 def import_welltory(config: Config, paths: list[Path] | None = None) -> dict[str, int]:
     """Import changed Welltory CSV files and return file, row, and new metric counts."""
     if paths is None:
@@ -53,39 +90,11 @@ def import_welltory(config: Config, paths: list[Path] | None = None) -> dict[str
             ).fetchone()
             if previous and previous["sha256"] == digest:
                 continue
-            with path.open(newline="", encoding="utf-8-sig") as handle:
-                reader = csv.DictReader(handle)
-                for row in reader:
-                    timestamp = row.get("Date") or row.get("Time")
-                    if not timestamp:
-                        continue
-                    occurred_at = as_utc_iso(timestamp, config.timezone)
-                    row_id = sha256(
-                        json.dumps(row, sort_keys=True).encode("utf-8")
-                    ).hexdigest()
-                    rows += 1
-                    for name, raw_value in row.items():
-                        if (
-                            name in {"Date", "Time"}
-                            or raw_value is None
-                            or not raw_value.strip()
-                        ):
-                            continue
-                        numeric = _number(raw_value)
-                        if insert_metric(
-                            conn,
-                            source="welltory",
-                            external_id=row_id,
-                            occurred_at=occurred_at,
-                            metric=f"welltory.{name}",
-                            value_num=numeric,
-                            value_text=None
-                            if numeric is not None
-                            else raw_value.strip(),
-                            unit=UNITS.get(name),
-                            payload=row,
-                        ):
-                            metrics += 1
+            imported_rows, imported_metrics = _import_welltory_csv(
+                conn, path, config.timezone
+            )
+            rows += imported_rows
+            metrics += imported_metrics
             conn.execute(
                 """
                 INSERT INTO import_files(path, sha256, source, imported_at)
