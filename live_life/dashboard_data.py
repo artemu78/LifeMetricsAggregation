@@ -1,22 +1,27 @@
 from __future__ import annotations
 
-from collections import defaultdict
-from datetime import date, datetime, timedelta, timezone
 import json
+from collections import defaultdict
+from collections.abc import Iterator
+from dataclasses import dataclass, field
+from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from .collectors import logical_window
 from .config import Config
 from .db import connect
 from .sleep import main_sleep_by_wake_date, sleep_seconds
-from .steps import STEP_METRIC, steps_by_calendar_date, step_total
-
+from .steps import STEP_METRIC, step_total, steps_by_calendar_date
 
 SOURCES = ("bracelet", "welltory", "todoist", "rescuetime")
-DB_SOURCE = {"bracelet": "fitness_drive", "welltory": "welltory", "rescuetime": "rescuetime"}
+DB_SOURCE = {
+    "bracelet": "fitness_drive",
+    "welltory": "welltory",
+    "rescuetime": "rescuetime",
+}
 
 
-def _days(start: date, end: date):
+def _days(start: date, end: date) -> Iterator[date]:
     current = start
     while current <= end:
         yield current
@@ -35,34 +40,44 @@ def _quality(statuses: list[str], *, current_day: bool) -> str:
     return "partial"
 
 
-def build_dashboard(config: Config, start: date, end: date) -> dict:
-    """Build a value-safe dashboard projection without reading diary or raw payloads."""
-    if end < start:
-        raise ValueError("to must be on or after from")
-    first_start, _ = logical_window(start, config)
-    _, last_end = logical_window(end, config)
-    start_utc = first_start.astimezone(timezone.utc).isoformat()
-    end_utc = last_end.astimezone(timezone.utc).isoformat()
-    tz = ZoneInfo(config.timezone)
-    today = datetime.now(tz).date()
+@dataclass(slots=True)
+class _DashboardFacts:
+    metrics: dict[str, dict[str, list[dict]]] = field(
+        default_factory=lambda: defaultdict(lambda: defaultdict(list))
+    )
+    created: dict[str, list[dict]] = field(default_factory=lambda: defaultdict(list))
+    completed: dict[str, list[dict]] = field(default_factory=lambda: defaultdict(list))
+    deleted: dict[str, list[dict]] = field(default_factory=lambda: defaultdict(list))
+    ema_events: dict[str, list[dict]] = field(default_factory=lambda: defaultdict(list))
+    run_statuses: dict[tuple[str, str], dict] = field(default_factory=dict)
 
-    metrics: dict[str, dict[str, list[dict]]] = defaultdict(lambda: defaultdict(list))
-    created: dict[str, list[dict]] = defaultdict(list)
-    completed: dict[str, list[dict]] = defaultdict(list)
-    deleted: dict[str, list[dict]] = defaultdict(list)
-    ema_events: dict[str, list[dict]] = defaultdict(list)
-    run_statuses: dict[tuple[str, str], dict] = {}
+
+def _read_dashboard_facts(
+    config: Config,
+    start: date,
+    end: date,
+    start_utc: str,
+    end_utc: str,
+    tz: ZoneInfo,
+    facts: _DashboardFacts,
+) -> None:
+    """Load the bounded source projection used to assemble dashboard days."""
 
     def logical_date(timestamp: str) -> str:
         return (
-            datetime.fromisoformat(timestamp).astimezone(tz)
-            - timedelta(hours=config.day_boundary_hour)
-        ).date().isoformat()
+            (
+                datetime.fromisoformat(timestamp).astimezone(tz)
+                - timedelta(hours=config.day_boundary_hour)
+            )
+            .date()
+            .isoformat()
+        )
 
     with connect(config.database) as conn:
         for row in conn.execute(
             """
-            SELECT source, occurred_at, metric, value_num, value_text, unit, payload_json
+            SELECT source, occurred_at, metric, value_num, value_text, unit,
+                   payload_json
             FROM metric_events
             WHERE occurred_at >= ? AND occurred_at < ?
               AND source IN ('fitness_drive', 'welltory', 'rescuetime')
@@ -90,13 +105,15 @@ def build_dashboard(config: Config, start: date, end: date) -> dict:
                     productivity = None
                 if type(productivity) is int and -2 <= productivity <= 2:
                     point["productivityLevel"] = productivity
-            metrics[day][row["source"]].append(point)
-        for wake_date, points in main_sleep_by_wake_date(conn, start, end, config.timezone).items():
-            metrics[wake_date]["fitness_drive"].extend(points)
+            facts.metrics[day][row["source"]].append(point)
+        for wake_date, points in main_sleep_by_wake_date(
+            conn, start, end, config.timezone
+        ).items():
+            facts.metrics[wake_date]["fitness_drive"].extend(points)
         for calendar_date, points in steps_by_calendar_date(
             conn, start, end, config.timezone
         ).items():
-            metrics[calendar_date]["fitness_drive"].extend(points)
+            facts.metrics[calendar_date]["fitness_drive"].extend(points)
         for row in conn.execute(
             """
             SELECT content, created_at FROM created_tasks
@@ -105,7 +122,7 @@ def build_dashboard(config: Config, start: date, end: date) -> dict:
             """,
             (start_utc, end_utc),
         ):
-            created[logical_date(row["created_at"])].append(
+            facts.created[logical_date(row["created_at"])].append(
                 {"content": row["content"], "timestamp": row["created_at"]}
             )
         for row in conn.execute(
@@ -116,7 +133,7 @@ def build_dashboard(config: Config, start: date, end: date) -> dict:
             """,
             (start_utc, end_utc),
         ):
-            completed[logical_date(row["completed_at"])].append(
+            facts.completed[logical_date(row["completed_at"])].append(
                 {"content": row["content"], "timestamp": row["completed_at"]}
             )
         for row in conn.execute(
@@ -125,7 +142,7 @@ def build_dashboard(config: Config, start: date, end: date) -> dict:
             ORDER BY deleted_at""",
             (start_utc, end_utc),
         ):
-            deleted[logical_date(row["deleted_at"])].append(
+            facts.deleted[logical_date(row["deleted_at"])].append(
                 {"content": row["content"], "timestamp": row["deleted_at"]}
             )
         for row in conn.execute(
@@ -151,7 +168,7 @@ def build_dashboard(config: Config, start: date, end: date) -> dict:
                 item["activity"] = row["activity"]
             if row["note"] is not None:
                 item["note"] = row["note"]
-            ema_events[logical_date(row["scheduled_at"])].append(item)
+            facts.ema_events[logical_date(row["scheduled_at"])].append(item)
         for row in conn.execute(
             """
             SELECT source, logical_date, status, finished_at
@@ -161,15 +178,30 @@ def build_dashboard(config: Config, start: date, end: date) -> dict:
             """,
             (start.isoformat(), end.isoformat()),
         ):
-            run_statuses.setdefault(
+            facts.run_statuses.setdefault(
                 (row["logical_date"], row["source"]),
                 {"status": row["status"], "lastRunAt": row["finished_at"]},
             )
 
+
+def build_dashboard(config: Config, start: date, end: date) -> dict[str, object]:
+    """Build a value-safe dashboard projection without reading diary or raw payloads."""
+    if end < start:
+        raise ValueError("to must be on or after from")
+    first_start, _ = logical_window(start, config)
+    _, last_end = logical_window(end, config)
+    start_utc = first_start.astimezone(UTC).isoformat()
+    end_utc = last_end.astimezone(UTC).isoformat()
+    tz = ZoneInfo(config.timezone)
+    today = datetime.now(tz).date()
+
+    facts = _DashboardFacts()
+    _read_dashboard_facts(config, start, end, start_utc, end_utc, tz, facts)
+
     result_days = []
     for day in _days(start, end):
         day_key = day.isoformat()
-        day_metrics = metrics[day_key]
+        day_metrics = facts.metrics[day_key]
         bracelet_metrics = day_metrics["fitness_drive"]
         welltory_metrics = day_metrics["welltory"]
         rescue_rows = []
@@ -187,12 +219,16 @@ def build_dashboard(config: Config, start: date, end: date) -> dict:
                 rescue_rows.append(rescue_item)
         source_items = []
         for source in SOURCES:
-            status = run_statuses.get((day_key, source))
+            status = facts.run_statuses.get((day_key, source))
             if status is None:
                 has_legacy_data = {
                     "bracelet": bool(bracelet_metrics),
                     "welltory": bool(welltory_metrics),
-                    "todoist": bool(created[day_key] or completed[day_key] or deleted[day_key]),
+                    "todoist": bool(
+                        facts.created[day_key]
+                        or facts.completed[day_key]
+                        or facts.deleted[day_key]
+                    ),
                     "rescuetime": bool(rescue_rows),
                 }[source]
                 status = {
@@ -202,13 +238,13 @@ def build_dashboard(config: Config, start: date, end: date) -> dict:
             source_items.append({"source": source, **status})
 
         selected_sleep = [
-            point for point in bracelet_metrics
+            point
+            for point in bracelet_metrics
             if point["metric"].startswith("fitness_drive.sleep.")
         ]
         selected_sleep_seconds = sleep_seconds(selected_sleep)
         selected_steps = [
-            point for point in bracelet_metrics
-            if point["metric"] == STEP_METRIC
+            point for point in bracelet_metrics if point["metric"] == STEP_METRIC
         ]
         result_days.append(
             {
@@ -221,7 +257,9 @@ def build_dashboard(config: Config, start: date, end: date) -> dict:
                 ),
                 "sources": source_items,
                 "bracelet": {
-                    "sleepSeconds": selected_sleep_seconds if selected_sleep_seconds else None,
+                    "sleepSeconds": selected_sleep_seconds
+                    if selected_sleep_seconds
+                    else None,
                     "steps": step_total(selected_steps) if selected_steps else None,
                 },
                 "welltory": {
@@ -229,9 +267,9 @@ def build_dashboard(config: Config, start: date, end: date) -> dict:
                     "count": len(welltory_metrics),
                 },
                 "todoist": {
-                    "created": len(created[day_key]),
-                    "completed": len(completed[day_key]),
-                    "deleted": len(deleted[day_key]),
+                    "created": len(facts.created[day_key]),
+                    "completed": len(facts.completed[day_key]),
+                    "deleted": len(facts.deleted[day_key]),
                 },
                 "rescuetime": {
                     "available": bool(rescue_rows),
@@ -240,10 +278,10 @@ def build_dashboard(config: Config, start: date, end: date) -> dict:
                 "detail": {
                     "braceletMetrics": bracelet_metrics,
                     "welltoryMetrics": welltory_metrics,
-                    "createdTasks": created[day_key],
-                    "completedTasks": completed[day_key],
-                    "deletedTasks": deleted[day_key],
-                    "emaEvents": ema_events[day_key],
+                    "createdTasks": facts.created[day_key],
+                    "completedTasks": facts.completed[day_key],
+                    "deletedTasks": facts.deleted[day_key],
+                    "emaEvents": facts.ema_events[day_key],
                     "rescueTime": rescue_rows,
                 },
             }
@@ -252,6 +290,6 @@ def build_dashboard(config: Config, start: date, end: date) -> dict:
         "from": start.isoformat(),
         "to": end.isoformat(),
         "timezone": config.timezone,
-        "generatedAt": datetime.now(timezone.utc).isoformat(),
+        "generatedAt": datetime.now(UTC).isoformat(),
         "days": result_days,
     }
