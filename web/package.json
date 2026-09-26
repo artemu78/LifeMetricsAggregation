@@ -7,6 +7,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "test": "vitest run",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
     "test:coverage": "vitest run --coverage",
     "generate:types": "openapi-typescript ../openapi.yaml -o src/generated/api-types.ts",
     "check:types": "npm run generate:types && git diff --exit-code -- src/generated/api-types.ts"
@@ -21,6 +23,7 @@
     "recharts": "^3.3.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
     "@types/react": "^19.2.0",
