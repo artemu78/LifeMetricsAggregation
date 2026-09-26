@@ -21,12 +21,13 @@ export function EmaActivityTrack({
         .map((item) => {
           const activityInfo = getEmaActivity(item.activity);
           const ActivityIcon = activityInfo.icon;
-          const detailParts = [`EMA · ${activityInfo.label}`];
+          const activityLabel = item.activityLabel ?? activityInfo.label;
+          const detailParts = [`EMA · ${activityLabel}`];
           if (item.note) detailParts.push(`заметка: ${item.note}`);
           const activityRecord: RecordItem = {
             start: item.start,
             end: 0,
-            label: activityInfo.label,
+            label: activityLabel,
             detail: detailParts.join(" · "),
             color: EMA_ACTIVITY_MARKER.color,
             kind: "ema-activity",
@@ -42,7 +43,7 @@ export function EmaActivityTrack({
               <button
                 type="button"
                 className="ema-activity-marker"
-                aria-label={`EMA · ${activityInfo.label}`}
+                aria-label={`EMA · ${activityLabel}`}
                 onClick={(event) => selectAtCursor(activityRecord, event)}
                 onMouseEnter={(event) => selectAtCursor(activityRecord, event)}
                 onMouseMove={(event) => selectAtCursor(activityRecord, event)}

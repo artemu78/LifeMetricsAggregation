@@ -133,6 +133,7 @@ export interface components {
             focus?: number;
             stress?: number;
             activity?: string;
+            activityLabel?: string;
             note?: string;
         };
         RescueTimeItem: {

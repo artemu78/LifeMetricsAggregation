@@ -94,8 +94,9 @@ class EmaEventItem(BaseModel):
     energy: conint(ge=1, le=5) | None = None
     focus: conint(ge=1, le=5) | None = None
     stress: conint(ge=1, le=5) | None = None
-    activity: str | None = None
-    note: str | None = None
+    activity: constr(min_length=1) | None = None
+    activityLabel: constr(min_length=1) | None = None
+    note: constr(min_length=1, max_length=280) | None = None
 
 
 class Perspective(StrEnum):

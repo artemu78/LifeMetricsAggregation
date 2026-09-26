@@ -294,7 +294,7 @@ export function buildEmaRecords(day: Day): EmaRecordItem[] {
       if (metrics.length > 0) parts.push(metrics.join(", "));
       if (event.activity) {
         const activityInfo = getEmaActivity(event.activity);
-        parts.push(`занятие: ${activityInfo.label}`);
+        parts.push(`занятие: ${event.activityLabel ?? activityInfo.label}`);
       }
       if (event.note) parts.push(`заметка: ${event.note}`);
       return {
@@ -310,6 +310,7 @@ export function buildEmaRecords(day: Day): EmaRecordItem[] {
         stress: event.stress,
         focus: event.focus,
         activity: event.activity,
+        activityLabel: event.activityLabel,
         note: event.note,
       };
     });
