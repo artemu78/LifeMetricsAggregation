@@ -368,6 +368,10 @@ describe("DayTimelineChart", () => {
         <App />
       </MemoryRouter>,
     );
+    // Flush the lazy route import and its Suspense update before querying the dialog.
+    await act(async () => {
+      await import("../src/dashboard/DayRoutes");
+    });
     const dialog = await screen.findByRole("dialog", { name: /Ход дня/ });
     await waitFor(() => expect((dialog as HTMLDialogElement).open).toBe(true));
     await waitFor(() => expect(dashboardStore.loading).toBe(false));
