@@ -170,6 +170,18 @@ def _fitness_manifest(config: Config) -> dict[str, dict]:
 
 
 MetricRow = tuple[str, str, str, float, str, dict]
+EMA_STATUSES = {"pending", "answered", "dismissed", "expired"}
+EMA_RATING_FIELDS = ("mood", "energy", "focus", "stress")
+EMA_ANSWER_FIELDS = {
+    "answeredAt",
+    *EMA_RATING_FIELDS,
+    "activity",
+    "activityLabel",
+    "note",
+    "additionalAnswers",
+}
+
+
 @dataclass(frozen=True)
 class EmaRow:
     event_id: str
@@ -185,6 +197,97 @@ class EmaRow:
     activity_label: str | None
     note: str | None
     payload_json: str
+
+
+def _invalid_ema(path: Path) -> ValueError:
+    return ValueError(f"Invalid EMA event in {path.name}")
+
+
+def _ema_identity(event: dict, path: Path) -> tuple[int, str, str, str]:
+    schema_version = event.get("schemaVersion")
+    event_id = event.get("id")
+    schedule_date = event.get("scheduleDate")
+    scheduled_at = event.get("scheduledAt")
+    timezone_name = event.get("timezone")
+    if (
+        type(schema_version) is not int
+        or schema_version not in {1, 2}
+        or not isinstance(event_id, str)
+        or not re.fullmatch(r"[A-Za-z0-9_-]{1,100}", event_id)
+        or not isinstance(schedule_date, str)
+        or not isinstance(scheduled_at, str)
+        or not isinstance(timezone_name, str)
+        or not timezone_name.strip()
+        or event.get("status") not in EMA_STATUSES
+    ):
+        raise _invalid_ema(path)
+    try:
+        date.fromisoformat(schedule_date)
+    except ValueError:
+        raise _invalid_ema(path) from None
+    return schema_version, event_id, scheduled_at, event["status"]
+
+
+def _ema_ratings(event: dict, path: Path) -> dict[str, int | None]:
+    ratings: dict[str, int | None] = {}
+    for key in EMA_RATING_FIELDS:
+        value = event.get(key)
+        if key in event and (type(value) is not int or not 1 <= value <= 5):
+            raise _invalid_ema(path)
+        ratings[key] = value
+    return ratings
+
+
+def _ema_optional_text(
+    event: dict, key: str, path: Path, *, max_length: int | None = None
+) -> str | None:
+    if key not in event:
+        return None
+    value = event[key]
+    if not isinstance(value, str) or not value.strip():
+        raise _invalid_ema(path)
+    if max_length is not None and len(value) > max_length:
+        raise _invalid_ema(path)
+    return value
+
+
+def _validate_ema_additional_answers(event: dict, path: Path) -> None:
+    if "additionalAnswers" not in event:
+        return
+    answers = event["additionalAnswers"]
+    if not isinstance(answers, dict) or any(
+        key in EMA_RATING_FIELDS or type(value) is not int
+        for key, value in answers.items()
+    ):
+        raise _invalid_ema(path)
+
+
+def _ema_answered_at(
+    event: dict,
+    path: Path,
+    schema_version: int,
+    status: str,
+    ratings: dict[str, int | None],
+    activity: str | None,
+) -> str | None:
+    if status != "answered":
+        if EMA_ANSWER_FIELDS.intersection(event):
+            raise _invalid_ema(path)
+        return None
+    answered_at = event.get("answeredAt")
+    if not isinstance(answered_at, str):
+        raise _invalid_ema(path)
+    has_all_v1_answers = activity is not None and all(
+        ratings[key] is not None for key in EMA_RATING_FIELDS
+    )
+    has_meaningful_v2_answer = activity is not None or any(
+        ratings[key] is not None for key in EMA_RATING_FIELDS
+    )
+    if schema_version == 1 and not has_all_v1_answers:
+        raise _invalid_ema(path)
+    if schema_version == 2 and not has_meaningful_v2_answer:
+        raise _invalid_ema(path)
+    return answered_at
 
 
 def _validate_fitness_document(
@@ -263,99 +366,18 @@ def _stage_record_metrics(
 
 def _stage_ema_event(event: dict, path: Path, timezone_name: str) -> EmaRow:
     """Validate one EMA event and normalize it for the database schema."""
-    schema_version = event.get("schemaVersion")
-    event_id = event.get("id")
-    schedule_date = event.get("scheduleDate")
-    scheduled_at = event.get("scheduledAt")
-    status = event.get("status")
-    if (
-        type(schema_version) is not int
-        or schema_version not in {1, 2}
-        or not isinstance(event_id, str)
-        or not re.fullmatch(r"[A-Za-z0-9_-]{1,100}", event_id)
-        or not isinstance(schedule_date, str)
-        or not isinstance(scheduled_at, str)
-        or not isinstance(event.get("timezone"), str)
-        or not event["timezone"].strip()
-        or status
-        not in {
-            "pending",
-            "answered",
-            "dismissed",
-            "expired",
-        }
-    ):
-        raise ValueError(f"Invalid EMA event in {path.name}")
-    try:
-        date.fromisoformat(schedule_date)
-    except ValueError:
-        raise ValueError(f"Invalid EMA event in {path.name}") from None
+    schema_version, event_id, scheduled_at, status = _ema_identity(event, path)
     answered = status == "answered"
-
-    answer_fields = {
-        "answeredAt",
-        "mood",
-        "energy",
-        "focus",
-        "stress",
-        "activity",
-        "activityLabel",
-        "note",
-        "additionalAnswers",
-    }
-    if not answered and answer_fields.intersection(event):
-        raise ValueError(f"Invalid EMA event in {path.name}")
-
-    ratings: dict[str, int | None] = {}
-    for key in ("mood", "energy", "focus", "stress"):
-        if key not in event:
-            ratings[key] = None
-            continue
-        value = event[key]
-        if type(value) is not int or not 1 <= value <= 5:
-            raise ValueError(f"Invalid EMA event in {path.name}")
-        ratings[key] = value
-
-    def optional_non_empty_text(key: str, *, max_length: int | None = None) -> str | None:
-        if key not in event:
-            return None
-        value = event[key]
-        if not isinstance(value, str) or not value.strip():
-            raise ValueError(f"Invalid EMA event in {path.name}")
-        if max_length is not None and len(value) > max_length:
-            raise ValueError(f"Invalid EMA event in {path.name}")
-        return value
-
-    activity = optional_non_empty_text("activity")
-    activity_label = optional_non_empty_text("activityLabel")
-    note = optional_non_empty_text("note", max_length=280)
+    ratings = _ema_ratings(event, path)
+    activity = _ema_optional_text(event, "activity", path)
+    activity_label = _ema_optional_text(event, "activityLabel", path)
+    note = _ema_optional_text(event, "note", path, max_length=280)
     if activity_label is not None and activity is None:
-        raise ValueError(f"Invalid EMA event in {path.name}")
-
-    additional_answers = event.get("additionalAnswers")
-    if "additionalAnswers" in event and (
-        not isinstance(additional_answers, dict)
-        or any(
-            key in {"mood", "energy", "focus", "stress"}
-            or type(value) is not int
-            for key, value in additional_answers.items()
-        )
-    ):
-        raise ValueError(f"Invalid EMA event in {path.name}")
-
-    answered_at = event.get("answeredAt")
-    if answered:
-        if not isinstance(answered_at, str):
-            raise ValueError(f"Invalid EMA event in {path.name}")
-        meaningful_answer = activity is not None or any(
-            ratings[key] is not None for key in ratings
-        )
-        if schema_version == 1 and (
-            activity is None or any(ratings[key] is None for key in ratings)
-        ):
-            raise ValueError(f"Invalid EMA event in {path.name}")
-        if schema_version == 2 and not meaningful_answer:
-            raise ValueError(f"Invalid EMA event in {path.name}")
+        raise _invalid_ema(path)
+    _validate_ema_additional_answers(event, path)
+    answered_at = _ema_answered_at(
+        event, path, schema_version, status, ratings, activity
+    )
 
     return EmaRow(
         event_id=event_id,
