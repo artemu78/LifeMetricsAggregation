@@ -22,6 +22,7 @@ export const TimelineRoute = observer(function TimelineRoute() {
   const nextDay = store.dashboard?.days.find((item) => item.date === nextDate);
   const dialogRef = useRef<HTMLDialogElement>(null);
   const closeTimeline = () => navigate(`/day/${day?.date ?? date}`);
+  const isDialogRendered = Boolean(store.dashboard && day);
   useEffect(() => {
     const dialog = dialogRef.current;
     if (!dialog) return;
@@ -29,7 +30,7 @@ export const TimelineRoute = observer(function TimelineRoute() {
     return () => {
       if (dialog.open) dialog.close();
     };
-  }, [day]);
+  }, [isDialogRendered]);
   if (!store.dashboard) return null;
   if (!day) return <Navigate to="/" replace />;
   return (

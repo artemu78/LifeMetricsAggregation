@@ -5,12 +5,19 @@ export function useModalDismissAndTrapFocus(
   onClose: () => void,
   onKeyDown?: (event: KeyboardEvent) => void,
 ) {
+  const previousFocusRef = useRef<Element | null>(null);
+  const restoreFocusFrameRef = useRef<number | null>(null);
   const handlersRef = useRef({ onClose, onKeyDown });
   useEffect(() => {
     handlersRef.current = { onClose, onKeyDown };
   });
 
   useEffect(() => {
+    if (restoreFocusFrameRef.current !== null) {
+      cancelAnimationFrame(restoreFocusFrameRef.current);
+      restoreFocusFrameRef.current = null;
+    }
+    previousFocusRef.current ??= document.activeElement;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     modalRef.current?.focus();
@@ -59,6 +66,13 @@ export function useModalDismissAndTrapFocus(
       document.body.style.overflow = previousOverflow;
       window.removeEventListener("keydown", handleKey);
       document.removeEventListener("pointerdown", handlePointerDown);
+      restoreFocusFrameRef.current = requestAnimationFrame(() => {
+        restoreFocusFrameRef.current = null;
+        const previousFocus = previousFocusRef.current;
+        if (previousFocus instanceof HTMLElement && previousFocus.isConnected) {
+          previousFocus.focus();
+        }
+      });
     };
   }, [modalRef]);
 }

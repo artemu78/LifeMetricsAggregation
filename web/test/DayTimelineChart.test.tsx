@@ -1,5 +1,6 @@
 import "@testing-library/jest-dom/vitest";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { runInAction } from "mobx";
 import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DayTimelineChart } from "../src/timeline/DayTimelineChart";
@@ -360,6 +361,8 @@ describe("DayTimelineChart", () => {
       value(this: HTMLDialogElement) { this.open = false; },
     });
 
+    const showModal = vi.spyOn(HTMLDialogElement.prototype, "showModal");
+    const close = vi.spyOn(HTMLDialogElement.prototype, "close");
     const { container } = render(
       <MemoryRouter initialEntries={[`/timeline/${day.date}`]}>
         <App />
@@ -367,8 +370,18 @@ describe("DayTimelineChart", () => {
     );
     const dialog = await screen.findByRole("dialog", { name: /Ход дня/ });
     await waitFor(() => expect((dialog as HTMLDialogElement).open).toBe(true));
-    fireEvent.click(screen.getByRole("button", { name: "Закрыть Ход дня" }));
+    await waitFor(() => expect(dashboardStore.loading).toBe(false));
+    const dismiss = screen.getByRole("button", { name: "Закрыть Ход дня" });
+    dismiss.focus();
+    showModal.mockClear();
+    close.mockClear();
+    act(() => { runInAction(() => { installDashboard(); }); });
+    expect(showModal).not.toHaveBeenCalled();
+    expect(close).not.toHaveBeenCalled();
+    expect(dismiss).toHaveFocus();
+    fireEvent.click(dismiss);
     expect(await screen.findByRole("dialog", { name: day.date })).toBeInTheDocument();
+    expect(close).toHaveBeenCalledOnce();
     expect(container.querySelector(".day-detail-modal .day-chart-card")).toBeInTheDocument();
     await waitFor(() => expect(dashboardStore.loading).toBe(false));
     dashboardStore.dashboard = null;
