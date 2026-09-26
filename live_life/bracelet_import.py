@@ -440,12 +440,19 @@ def _store_fitness_projection(
         ordered_staged = sorted(
             staged.items(), key=lambda item: file_ranks[item[0]], reverse=True
         )
+        claimed_ema_ids: set[str] = set()
         for path, rows in ordered_staged:
+            authoritative_ema_rows = []
+            for ema_row in staged_ema[path]:
+                if ema_row.event_id in claimed_ema_ids:
+                    continue
+                claimed_ema_ids.add(ema_row.event_id)
+                authoritative_ema_rows.append(ema_row)
             metrics += _store_staged_file(
                 conn,
                 path,
                 rows,
-                staged_ema[path],
+                authoritative_ema_rows,
                 manifest.get(path.name, {}),
                 path_hashes[path],
                 rebuild=rebuild,
@@ -477,9 +484,10 @@ def _store_metric_rows(conn, path: Path, rows: list[MetricRow]) -> int:
 
 
 def _store_ema_rows(conn, path: Path, rows: list[EmaRow]) -> None:
+    """Insert revisions preselected from highest- to lowest-ranked exports."""
     for row in rows:
         conn.execute(
-            """INSERT OR IGNORE INTO ema_events
+            """INSERT INTO ema_events
             (event_id, schema_version, scheduled_at, answered_at, status, origin_file,
              mood, energy, focus, stress, activity, activity_label, note, payload_json)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",

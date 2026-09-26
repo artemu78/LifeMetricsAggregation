@@ -438,6 +438,55 @@ class DashboardTest(unittest.TestCase):
             ).fetchall()
         self.assertEqual([tuple(row) for row in rows], [("stable-event-id", 5)])
 
+    def test_highest_ranked_export_owns_cross_file_ema_revision(self):
+        newer_path = self.cache / "a-newer.json"
+        older_path = self.cache / "z-older.json"
+
+        def write_export(path: Path, mood: int) -> None:
+            path.write_text(json.dumps({
+                "header": {"schemaVersion": 1, "recordCount": 0},
+                "records": [],
+                "emaEvents": [{
+                    "schemaVersion": 2,
+                    "id": "shared-event-id",
+                    "scheduleDate": "2026-09-10",
+                    "scheduledAt": "2026-09-10T12:00:00Z",
+                    "answeredAt": "2026-09-10T12:01:00Z",
+                    "status": "answered",
+                    "mood": mood,
+                    "timezone": "Europe/Moscow",
+                }],
+            }))
+
+        write_export(newer_path, 5)
+        write_export(older_path, 2)
+        (self.cache / ".drive-index.json").write_text(json.dumps({
+            "version": 2,
+            "files": {
+                "newer-remote-id": {
+                    "localName": newer_path.name,
+                    "modifiedTime": "2026-09-10T14:00:00Z",
+                },
+                "older-remote-id": {
+                    "localName": older_path.name,
+                    "modifiedTime": "2026-09-10T13:00:00Z",
+                },
+            },
+        }))
+
+        import_fitness_drive(self.config)
+        write_export(older_path, 1)
+        import_fitness_drive(self.config)
+
+        with connect(self.config.database) as conn:
+            row = conn.execute(
+                "SELECT mood, origin_file, payload_json FROM ema_events "
+                "WHERE event_id = 'shared-event-id'"
+            ).fetchone()
+        self.assertEqual(row["mood"], 5)
+        self.assertEqual(Path(row["origin_file"]), newer_path.resolve())
+        self.assertEqual(json.loads(row["payload_json"])["mood"], 5)
+
     def test_overlapping_fitness_files_deduplicate_and_exclude_awake_seconds(self):
         file1 = self.cache / "sync-file-1.json"
         file2 = self.cache / "backfill-file-2.json"
