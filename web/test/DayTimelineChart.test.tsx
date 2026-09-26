@@ -1,11 +1,12 @@
 import "@testing-library/jest-dom/vitest";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { runInAction } from "mobx";
 import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DayTimelineChart } from "./DayTimelineChart";
-import { App } from "./App";
-import { dashboardStore } from "./store";
-import type { components } from "./generated/api-types";
+import { DayTimelineChart } from "../src/timeline/DayTimelineChart";
+import { App } from "../src/App";
+import { dashboardStore } from "../src/store";
+import type { components } from "../src/generated/api-types";
 
 type Day = components["schemas"]["DashboardDay"];
 
@@ -360,15 +361,31 @@ describe("DayTimelineChart", () => {
       value(this: HTMLDialogElement) { this.open = false; },
     });
 
+    const showModal = vi.spyOn(HTMLDialogElement.prototype, "showModal");
+    const close = vi.spyOn(HTMLDialogElement.prototype, "close");
     const { container } = render(
       <MemoryRouter initialEntries={[`/timeline/${day.date}`]}>
         <App />
       </MemoryRouter>,
     );
+    // Flush the lazy route import and its Suspense update before querying the dialog.
+    await act(async () => {
+      await import("../src/dashboard/DayRoutes");
+    });
     const dialog = await screen.findByRole("dialog", { name: /Ход дня/ });
     await waitFor(() => expect((dialog as HTMLDialogElement).open).toBe(true));
-    fireEvent.click(screen.getByRole("button", { name: "Закрыть Ход дня" }));
-    expect(screen.getByRole("dialog", { name: day.date })).toBeInTheDocument();
+    await waitFor(() => expect(dashboardStore.loading).toBe(false));
+    const dismiss = screen.getByRole("button", { name: "Закрыть Ход дня" });
+    dismiss.focus();
+    showModal.mockClear();
+    close.mockClear();
+    act(() => { runInAction(() => { installDashboard(); }); });
+    expect(showModal).not.toHaveBeenCalled();
+    expect(close).not.toHaveBeenCalled();
+    expect(dismiss).toHaveFocus();
+    fireEvent.click(dismiss);
+    expect(await screen.findByRole("dialog", { name: day.date })).toBeInTheDocument();
+    expect(close).toHaveBeenCalledOnce();
     expect(container.querySelector(".day-detail-modal .day-chart-card")).toBeInTheDocument();
     await waitFor(() => expect(dashboardStore.loading).toBe(false));
     dashboardStore.dashboard = null;
@@ -542,4 +559,47 @@ describe("DayTimelineChart", () => {
 
     dashboardStore.dashboard = null;
   });
+});
+
+it("updates track content and sleep boundaries when a dashboard snapshot is replaced", () => {
+  const view = render(<DayTimelineChart day={day} timezone="Europe/Moscow" />);
+  expect(view.container.querySelectorAll(".chart-step-bar")).toHaveLength(2);
+  const updated: Day = {
+    ...day,
+    detail: {
+      ...day.detail,
+      braceletMetrics: [metric("2026-09-24T07:00:00+03:00", "fitness_drive.steps", 900)],
+      createdTasks: [{ timestamp: "2026-09-24T11:00:00+03:00", content: "Updated task" }],
+      completedTasks: [],
+    },
+  };
+  view.rerender(<DayTimelineChart day={updated} timezone="Europe/Moscow" nextDaySleepMetrics={nextSleepMetrics} />);
+  expect(view.container.querySelectorAll(".chart-step-bar")).toHaveLength(1);
+  expect(screen.getByRole("button", { name: /Updated task/ })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /First task/ })).not.toBeInTheDocument();
+  expect(view.container.querySelector(".chart-sleep-boundary")).toHaveTextContent("СОН · 06:30");
+  fireEvent.mouseEnter(view.container.querySelector(".chart-step-bar")!, { clientX: 300, clientY: 400 });
+  expect(screen.getByRole("tooltip")).toHaveTextContent("900 шагов");
+  view.rerender(<DayTimelineChart day={updated} timezone="UTC" />);
+  expect(view.container.querySelector(".chart-sleep-boundary")).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /Updated task/ })).toHaveAttribute("aria-label", "08:00 · Задача создана · Updated task");
+});
+
+it("gives each mounted timeline its own SVG clipping definition", () => {
+  const view = render(<><DayTimelineChart day={day} timezone="Europe/Moscow" /><DayTimelineChart day={day} timezone="Europe/Moscow" /></>);
+  const charts = view.container.querySelectorAll("svg.day-chart");
+  const clipIds = Array.from(charts, chart => chart.querySelector("clipPath")!.id);
+  expect(new Set(clipIds).size).toBe(2);
+  charts.forEach((chart, index) => {
+    expect(chart.querySelector(".heart-rate-series > g")).toHaveAttribute("clip-path", `url(#${clipIds[index]})`);
+  });
+});
+
+it("redirects a malformed timeline date without parsing it as a calendar date", async () => {
+  installDashboard();
+  render(<MemoryRouter initialEntries={["/timeline/not-a-date"]}><App /></MemoryRouter>);
+  await waitFor(() => expect(dashboardStore.loading).toBe(false));
+  expect(await screen.findByRole("link", { name: new RegExp(day.date) })).toBeInTheDocument();
+  await waitFor(() => expect(document.querySelector("main")).not.toHaveClass("blurred"));
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 });

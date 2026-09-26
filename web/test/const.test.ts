@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { EMA_ACTIVITIES, getEmaActivity } from "../src/const";
+import { EMA_ACTIVITIES, getEmaActivity } from "../src/timeline/emaActivities";
 
 describe("const.ts EMA activities", () => {
   it("provides definitions for all 11 activities", () => {

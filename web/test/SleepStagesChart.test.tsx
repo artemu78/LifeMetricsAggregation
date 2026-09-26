@@ -1,13 +1,9 @@
 import React from 'react'
 import { describe, it, expect } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
-import {
-  SleepStagesChart,
-  normalizeSleepPhase,
-  extractSleepIntervals,
-  formatDuration,
-  SLEEP_PHASES,
-} from '../src/SleepStagesChart'
+import { SleepStagesChart } from '../src/sleep/SleepStagesChart'
+import { normalizeSleepPhase, extractSleepIntervals, SLEEP_PHASES } from '../src/sleep/sleepModel'
+import { formatDuration } from '../src/shared/formatDuration'
 
 describe('SleepStagesChart', () => {
   it('normalizes various sleep metric names correctly', () => {
@@ -149,4 +145,16 @@ describe('SleepStagesChart', () => {
     fireEvent.pointerLeave(svg)
     expect(container.querySelector('.sleep-hover-indicator')).not.toBeInTheDocument()
   })
+})
+
+it('refreshes sleep geometry after a new snapshot and handles a subsequent empty snapshot', () => {
+  const metrics = [{ timestamp: '2026-09-15T01:00:00Z', metric: 'fitness_drive.sleep.deep_seconds', value: 1800 }]
+  const view = render(<SleepStagesChart sleepMetrics={metrics} timezone="Europe/Moscow" />)
+  const originalPath = view.container.querySelector('path[stroke-linecap]')!.getAttribute('d')
+  view.rerender(<SleepStagesChart sleepMetrics={[{ ...metrics[0], metric: 'fitness_drive.sleep.awake_seconds' }]} timezone="UTC" />)
+  expect(view.container.querySelector('path[stroke-linecap]')!.getAttribute('d')).not.toBe(originalPath)
+  expect(view.container.querySelector('.sleep-time-tick')).toHaveTextContent('01:00')
+  view.rerender(<SleepStagesChart sleepMetrics={[]} timezone="UTC" />)
+  expect(screen.getByText('Нет данных о фазах сна')).toBeInTheDocument()
+  expect(view.container.querySelector('svg')).not.toBeInTheDocument()
 })
