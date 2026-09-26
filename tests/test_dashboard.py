@@ -353,6 +353,35 @@ class DashboardTest(unittest.TestCase):
         self.assertNotIn("energy", by_time[0])
         self.assertEqual(by_time[1]["activityLabel"], "Work / coding")
 
+    def test_ema_without_schema_version_uses_v1_validation(self):
+        path = self.cache / "drive-ema--legacy.json"
+        path.write_text(json.dumps({
+            "header": {"schemaVersion": 1, "recordCount": 0},
+            "records": [],
+            "emaEvents": [{
+                "id": "legacy-v1-event",
+                "scheduleDate": "2026-09-10",
+                "scheduledAt": "2026-09-10T12:00:00Z",
+                "answeredAt": "2026-09-10T12:01:00Z",
+                "status": "answered",
+                "mood": 4,
+                "energy": 3,
+                "focus": 2,
+                "stress": 1,
+                "activity": "work_coding",
+                "timezone": "Europe/Moscow",
+            }],
+        }))
+
+        import_fitness_drive(self.config)
+
+        with connect(self.config.database) as conn:
+            row = conn.execute(
+                "SELECT schema_version, mood FROM ema_events "
+                "WHERE event_id = 'legacy-v1-event'"
+            ).fetchone()
+        self.assertEqual(tuple(row), (1, 4))
+
     def test_ema_rejects_invalid_versioned_answers_atomically(self):
         invalid_events = [
             {"schemaVersion": 2, "status": "answered", "answeredAt": "2026-09-10T12:01:00Z", "mood": 0},
@@ -360,6 +389,8 @@ class DashboardTest(unittest.TestCase):
             {"schemaVersion": 2, "status": "answered", "answeredAt": "2026-09-10T12:01:00Z", "activityLabel": "Work / coding"},
             {"schemaVersion": 1, "status": "answered", "answeredAt": "2026-09-10T12:01:00Z", "mood": 4},
             {"schemaVersion": 3, "status": "pending"},
+            {"schemaVersion": None, "status": "pending"},
+            {"schemaVersion": "1", "status": "pending"},
             {"schemaVersion": 2, "status": "pending", "mood": 4},
         ]
         for index, invalid in enumerate(invalid_events):

@@ -204,7 +204,7 @@ def _invalid_ema(path: Path) -> ValueError:
 
 
 def _ema_identity(event: dict, path: Path) -> tuple[int, str, str, str]:
-    schema_version = event.get("schemaVersion")
+    schema_version = event.get("schemaVersion", 1)
     event_id = event.get("id")
     schedule_date = event.get("scheduleDate")
     scheduled_at = event.get("scheduledAt")
