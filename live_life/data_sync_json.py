@@ -114,6 +114,23 @@ def _collector_issue(source: str, exc: Exception | None = None, skip_reason: str
     return None
 
 
+def _successful_collector_day(source: str, result: dict) -> tuple[str, int, set[str], dict | None]:
+    skip_reasons = {
+        key for key, value in result.items()
+        if key.startswith("skipped_") and value
+    }
+    status = "not_run" if skip_reasons else "success"
+    problem = next(
+        (_collector_issue(source, skip_reason=reason) for reason in skip_reasons),
+        None,
+    )
+    if source == "rescuetime":
+        records = int(result.get("events", 0))
+    else:
+        records = sum(int(result.get(key, 0)) for key in ("created", "completed", "deleted"))
+    return status, records, skip_reasons, problem
+
+
 def _sync_bracelet(config, start: date, end: date, started_at: str) -> dict:
     problem = None
     log_event(config, "started", stage="sync", fromDate=start.isoformat(), toDate=end.isoformat())
@@ -193,30 +210,12 @@ def _sync_collector(config, source: str, collector, start: date, end: date, star
     for day in _days(start, end):
         try:
             result = collector(config, day)
-            status = "not_run" if any(
-                value for key, value in result.items() if key.startswith("skipped_")
-            ) else "success"
-            skip_reasons.update(
-                key for key, value in result.items()
-                if key.startswith("skipped_") and value
+            status, day_records, day_skip_reasons, day_problem = _successful_collector_day(
+                source, result
             )
-            if problem is None:
-                problem = next(
-                    (
-                        _collector_issue(source, skip_reason=key)
-                        for key, value in result.items()
-                        if key.startswith("skipped_") and value
-                    ),
-                    None,
-                )
-            if source == "rescuetime":
-                records += int(result.get("events", 0))
-            else:
-                records += (
-                    int(result.get("created", 0))
-                    + int(result.get("completed", 0))
-                    + int(result.get("deleted", 0))
-                )
+            records += day_records
+            skip_reasons.update(day_skip_reasons)
+            problem = problem or day_problem
             details = result
         except Exception as exc:
             status = "failed"
