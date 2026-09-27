@@ -282,7 +282,7 @@ describe('App Component', () => {
 
     expect(screen.getByRole('heading', { name: 'Обновление данных' })).toBeInTheDocument()
     expect(screen.getByText('Обновляем источники…')).toBeInTheDocument()
-    expect(screen.getByText('15/09/2026 08:30:00')).toBeInTheDocument()
+    expect(screen.getByText('Обновлено: 15/09/2026 08:30:00')).toBeInTheDocument()
     expect(screen.getByText('недоступен')).toBeInTheDocument()
     expect(screen.getByLabelText('Обновление: Браслет')).toBeInTheDocument()
     expect(screen.getByLabelText('Обновление: RescueTime')).toBeInTheDocument()
@@ -316,6 +316,42 @@ describe('App Component', () => {
     expect(store.syncModalOpen).toBe(false)
   })
 
+  it('shows actionable source messages in the import popup', async () => {
+    act(() => {
+      store.syncModalOpen = true
+      store.syncing = false
+      store.syncProgress = {
+        todoist: {
+          source: 'todoist', status: 'partial', latest: null, display: null,
+          issue: {
+            code: 'TODOIST_HISTORY_UNAVAILABLE',
+            message: 'Todoist не отдал историю за часть выбранного периода. На бесплатном тарифе история доступна только за последние 7 дней.',
+            action: 'configure', steps: ['Выберите более короткий период.'],
+          },
+        },
+        rescuetime: {
+          source: 'rescuetime', status: 'failed', latest: null, display: null,
+          issue: {
+            code: 'RESCUETIME_TEMPORARY_FAILURE',
+            message: 'RescueTime временно не ответил (HTTP 502). Автоматические повторные попытки не помогли.',
+            action: 'retry', steps: ['Повторите импорт.'],
+          },
+        },
+      }
+    })
+
+    render(
+      <MemoryRouter initialEntries={['/']}>
+        <App />
+      </MemoryRouter>,
+    )
+
+    expect(screen.getByText('Обновлено частично')).toBeInTheDocument()
+    expect(screen.getByText('Не обновлено')).toBeInTheDocument()
+    expect(screen.getByText(/история доступна только за последние 7 дней/)).toBeInTheDocument()
+    expect(screen.getByText(/HTTP 502/)).toBeInTheDocument()
+  })
+
   it('handles focus trapping, pointerdown outside, and X button in SyncModal', async () => {
     vi.spyOn(store, 'load').mockImplementation(async () => {})
     act(() => {
@@ -335,7 +371,7 @@ describe('App Component', () => {
 
     // Error banner shown
     expect(screen.getByRole('alert')).toHaveTextContent('Критическая ошибка синхронизации')
-    expect(screen.getByText('failed')).toBeInTheDocument()
+    expect(screen.getByText('Не обновлено')).toBeInTheDocument()
 
     const modal = screen.getByRole('dialog')
     const focusable = modal.querySelectorAll<HTMLElement>('button, [href]')

@@ -15,6 +15,19 @@ from .config import Config
 from .db import connect, insert_metric, utc_now
 
 
+class RescueTimeFetchError(RuntimeError):
+    """A privacy-safe RescueTime failure with enough detail for recovery UI."""
+
+    def __init__(self, message: str, *, http_status: int | None, stage: str):
+        super().__init__(message)
+        self.http_status = http_status
+        self.stage = stage
+
+    @property
+    def retryable(self) -> bool:
+        return self.http_status in {429, 500, 502, 503, 504}
+
+
 def logical_window(day: date, config: Config) -> tuple[datetime, datetime]:
     """Return timezone-aware start and exclusive end times for a logical day."""
     tz = ZoneInfo(config.timezone)
@@ -78,9 +91,11 @@ def _fetch_rescuetime(config: Config, url: str, token: str, day: date, taxonomy:
         if isinstance(exc, HTTPError):
             exc.close()
         detail = f"HTTP {status}" if status is not None else type(reason).__name__
-        raise RuntimeError(
+        raise RescueTimeFetchError(
             f"RescueTime {day} {taxonomy}: {stage} failed after {elapsed:.1f}s "
-            f"({detail}); diagnostics: {config.root / 'data/logs/rescuetime.jsonl'}"
+            f"({detail}); diagnostics: {config.root / 'data/logs/rescuetime.jsonl'}",
+            http_status=status,
+            stage=stage,
         ) from None
     _rescuetime_log(config, "request_succeeded", **context,
                    elapsed_seconds=round(monotonic() - started, 3))
@@ -106,7 +121,22 @@ def collect_rescuetime(config: Config, day: date) -> dict[str, int]:
                     "format": "json",
                 }
             )
-            payload = _fetch_rescuetime(config, f"{config.rescuetime_api_url}?{params}", token, day, taxonomy)
+            url = f"{config.rescuetime_api_url}?{params}"
+            for attempt in range(3):
+                try:
+                    payload = _fetch_rescuetime(config, url, token, day, taxonomy)
+                    break
+                except RescueTimeFetchError as exc:
+                    if not exc.retryable or attempt == 2:
+                        raise
+                    _rescuetime_log(
+                        config,
+                        "request_retrying",
+                        day=day.isoformat(),
+                        taxonomy=taxonomy,
+                        attempt=attempt + 2,
+                        http_status=exc.http_status,
+                    )
             queries += 1
             headers = payload.get("row_headers", [])
             for values in payload.get("rows", []):

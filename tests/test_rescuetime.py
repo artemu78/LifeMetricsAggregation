@@ -49,6 +49,17 @@ class RescueTimeDiagnosticsTest(TestCase):
         self.assertNotIn('secret-test-token', self.log.read_text())
         self.assertNotIn('private response', self.log.read_text())
 
+    def test_transient_http_error_is_retried(self):
+        error = HTTPError('https://example.invalid', 502, 'Bad Gateway', {}, BytesIO(b''))
+        payload = json.dumps({'row_headers': [], 'rows': []}).encode()
+        with patch(
+            'live_life.collectors.urlopen',
+            side_effect=[error, BytesIO(payload), BytesIO(payload)],
+        ) as request:
+            self.assertEqual(collect_rescuetime(self.config, date(2026, 9, 11))['queries'], 2)
+        self.assertEqual(request.call_count, 3)
+        self.assertIn('request_retrying', [record['event'] for record in self.records()])
+
     def test_invalid_json_identifies_decode_stage(self):
         with patch('live_life.collectors.urlopen', return_value=BytesIO(b'not json')):
             with self.assertRaisesRegex(RuntimeError, 'decode_json'):

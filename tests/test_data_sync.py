@@ -8,6 +8,7 @@ from tempfile import TemporaryDirectory
 import json
 import unittest
 from unittest.mock import Mock, patch
+from urllib.error import HTTPError
 
 from live_life.api_models import DashboardSyncResponse
 from live_life.config import Config
@@ -64,6 +65,28 @@ class DashboardDataSyncTest(unittest.TestCase):
                 [(row["logical_date"], row["status"]) for row in runs],
                 [("2026-09-14", "success"), ("2026-09-15", "failed")],
             )
+
+    def test_todoist_history_403_has_actionable_issue(self):
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            config = Config(
+                root=root, timezone="Europe/Moscow", day_boundary_hour=5,
+                database=root / "data/life.db", inbox=root / "data/inbox",
+                reports=root / "reports", welltory_downloads=root,
+                welltory_pattern="*.csv", rescuetime_key_env="RESCUETIME_API_KEY",
+                todoist_token_env="TODOIST_API_TOKEN",
+            )
+            error = HTTPError("https://example.invalid", 403, "Forbidden", {}, None)
+            with redirect_stderr(StringIO()):
+                result = _sync_collector(
+                    config, "todoist", Mock(side_effect=error),
+                    date(2026, 9, 14), date(2026, 9, 14),
+                    "2026-09-15T10:00:00+00:00",
+                )
+
+            self.assertEqual(result["status"], "failed")
+            self.assertEqual(result["issue"]["code"], "TODOIST_HISTORY_UNAVAILABLE")
+            self.assertIn("7 дней", result["issue"]["message"])
 
     @patch("live_life.data_sync_json.collect_todoist")
     @patch("live_life.data_sync_json.collect_rescuetime")

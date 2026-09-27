@@ -865,12 +865,28 @@ h1 {
 .sync-source-item {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
+  gap: 16px;
   padding: 12px 16px;
   border-radius: 12px;
   background: white;
   border: 1px solid #e1ebe6;
   font-size: 0.95rem;
+}
+
+.sync-source-details {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sync-source-message {
+  color: #5b6f68;
+  font-size: 0.84rem;
+  font-weight: 400;
+  line-height: 1.35;
 }
 
 .sync-source-name {
@@ -882,6 +898,12 @@ h1 {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-shrink: 0;
+  text-align: right;
+}
+
+.sync-source-item.partial .sync-source-timestamp {
+  color: #9a6700;
 }
 
 .sync-spinner {

@@ -7,7 +7,7 @@ import sys
 import traceback
 from urllib.error import HTTPError, URLError
 
-from .collectors import collect_rescuetime, collect_todoist
+from .collectors import RescueTimeFetchError, collect_rescuetime, collect_todoist
 from .config import load_config
 from .db import connect, record_source_run
 from .fitness_drive import sync_fitness_drive
@@ -76,6 +76,42 @@ def _summary_status(statuses: list[str]) -> str:
     if "partial" in statuses or "not_run" in statuses:
         return "partial"
     return "success"
+
+
+def _collector_issue(source: str, exc: Exception | None = None, skip_reason: str | None = None) -> dict | None:
+    if skip_reason == "skipped_no_token":
+        label = "RescueTime" if source == "rescuetime" else "Todoist"
+        return {
+            "code": f"{source.upper()}_TOKEN_MISSING",
+            "message": f"{label} не обновлён: в настройках приложения нет токена доступа.",
+            "action": "configure",
+            "steps": [f"Добавьте токен {label} в файл .env и повторите импорт."],
+        }
+    if source == "todoist" and isinstance(exc, HTTPError) and exc.code == 403:
+        return {
+            "code": "TODOIST_HISTORY_UNAVAILABLE",
+            "message": (
+                "Todoist не отдал историю за часть выбранного периода. "
+                "На бесплатном тарифе история доступна только за последние 7 дней."
+            ),
+            "action": "configure",
+            "steps": [
+                "Выберите период в пределах последних 7 дней или проверьте тариф и доступ к истории в Todoist."
+            ],
+        }
+    if source == "rescuetime" and isinstance(exc, RescueTimeFetchError):
+        status = f" (HTTP {exc.http_status})" if exc.http_status else ""
+        return {
+            "code": "RESCUETIME_TEMPORARY_FAILURE" if exc.retryable else "RESCUETIME_REQUEST_FAILED",
+            "message": (
+                f"RescueTime временно не ответил{status}. Автоматические повторные попытки не помогли."
+                if exc.retryable
+                else f"RescueTime не удалось обновить{status}."
+            ),
+            "action": "retry",
+            "steps": ["Подождите немного и повторите импорт. Ранее загруженные данные сохранены."],
+        }
+    return None
 
 
 def _sync_bracelet(config, start: date, end: date, started_at: str) -> dict:
@@ -153,6 +189,7 @@ def _sync_collector(config, source: str, collector, start: date, end: date, star
     statuses = []
     records = 0
     skip_reasons: set[str] = set()
+    problem = None
     for day in _days(start, end):
         try:
             result = collector(config, day)
@@ -163,6 +200,15 @@ def _sync_collector(config, source: str, collector, start: date, end: date, star
                 key for key, value in result.items()
                 if key.startswith("skipped_") and value
             )
+            if problem is None:
+                problem = next(
+                    (
+                        _collector_issue(source, skip_reason=key)
+                        for key, value in result.items()
+                        if key.startswith("skipped_") and value
+                    ),
+                    None,
+                )
             if source == "rescuetime":
                 records += int(result.get("events", 0))
             else:
@@ -175,6 +221,7 @@ def _sync_collector(config, source: str, collector, start: date, end: date, star
         except Exception as exc:
             status = "failed"
             details = {"errorType": type(exc).__name__}
+            problem = problem or _collector_issue(source, exc=exc)
             _log_source_failure(source, day, day, exc)
         statuses.append(status)
         _record(config, source, day, status, started_at, details)
@@ -191,7 +238,12 @@ def _sync_collector(config, source: str, collector, start: date, end: date, star
             ",".join(sorted(skip_reasons)) or "none",
             ",".join(statuses),
         )
-    return {"source": source, "status": summary_status, "records": records}
+    return {
+        "source": source,
+        "status": summary_status,
+        "records": records,
+        **({"issue": problem} if problem else {}),
+    }
 
 
 def main(argv: list[str] | None = None) -> int:
