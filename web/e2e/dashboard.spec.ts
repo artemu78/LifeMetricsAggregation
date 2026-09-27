@@ -126,7 +126,7 @@ test("shows source synchronization progress and its partial result", async ({ pa
 
   await expect(page.getByRole("heading", { name: "Обновление данных" })).toBeVisible();
   await expect(page.getByText("Обновление завершено не для всех источников")).toBeVisible();
-  await expect(page.getByText("обновлено частично", { exact: true })).toBeVisible();
+  await expect(page.getByText("Обновлено частично", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Закрыть окно обновления" }).click();
   await expect(page.getByRole("heading", { name: "Обновление данных" })).toHaveCount(0);
 });
