@@ -493,8 +493,9 @@ class PipelineTest(unittest.TestCase):
             "live_life.collectors._get_json",
             side_effect=[completed, activity_error],
         ):
+            historical_day = date(2000, 1, 1)
             with self.assertRaises(TodoistRequestError) as raised:
-                collect_todoist(self.config, date(2000, 1, 1))
+                collect_todoist(self.config, historical_day)
 
         self.assertEqual(raised.exception.request_kind, "activity")
         self.assertTrue(raised.exception.historical_activity)

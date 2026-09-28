@@ -96,6 +96,29 @@ def _summary_status(statuses: list[str]) -> str:
     return "success"
 
 
+def _todoist_issue(exc: TodoistRequestError) -> dict:
+    if exc.request_kind == "activity" and exc.historical_activity:
+        return {
+            "code": "TODOIST_HISTORY_UNAVAILABLE",
+            "message": (
+                "Todoist не отдал историю действий за часть выбранного периода. "
+                "На бесплатном тарифе она доступна только за последние 7 дней."
+            ),
+            "action": "configure",
+            "steps": [
+                "Выберите период в пределах последних 7 дней или проверьте тариф и доступ к истории действий в Todoist."
+            ],
+        }
+    return {
+        "code": "TODOIST_PERMISSION_DENIED",
+        "message": "Todoist отклонил запрос. Проверьте токен и разрешения аккаунта.",
+        "action": "configure",
+        "steps": [
+            "Создайте новый API-токен Todoist, обновите TODOIST_API_TOKEN в .env и повторите импорт."
+        ],
+    }
+
+
 def _collector_issue(source: str, exc: Exception | None = None, skip_reason: str | None = None) -> dict | None:
     if skip_reason == "skipped_no_token":
         label = "RescueTime" if source == "rescuetime" else "Todoist"
@@ -106,26 +129,7 @@ def _collector_issue(source: str, exc: Exception | None = None, skip_reason: str
             "steps": [f"Добавьте токен {label} в файл .env и повторите импорт."],
         }
     if source == "todoist" and isinstance(exc, TodoistRequestError) and exc.http_status == 403:
-        if exc.request_kind == "activity" and exc.historical_activity:
-            return {
-                "code": "TODOIST_HISTORY_UNAVAILABLE",
-                "message": (
-                    "Todoist не отдал историю действий за часть выбранного периода. "
-                    "На бесплатном тарифе она доступна только за последние 7 дней."
-                ),
-                "action": "configure",
-                "steps": [
-                    "Выберите период в пределах последних 7 дней или проверьте тариф и доступ к истории действий в Todoist."
-                ],
-            }
-        return {
-            "code": "TODOIST_PERMISSION_DENIED",
-            "message": "Todoist отклонил запрос. Проверьте токен и разрешения аккаунта.",
-            "action": "configure",
-            "steps": [
-                "Создайте новый API-токен Todoist, обновите TODOIST_API_TOKEN в .env и повторите импорт."
-            ],
-        }
+        return _todoist_issue(exc)
     if source == "rescuetime" and isinstance(exc, RescueTimeFetchError):
         status = f" (HTTP {exc.http_status})" if exc.http_status else ""
         return {
