@@ -116,11 +116,17 @@ const SyncSourceItem = observer(function SyncSourceItem({
   progress?: SourceSyncProgress;
 }) {
   const isPending = !progress || progress.status === "pending";
+  const statusLabel = progress ? sourceStatusLabel(progress) : null;
   return (
     <li
       className={`sync-source-item ${isPending ? "pending" : progress.status}`}
     >
-      <span className="sync-source-name">{label}</span>
+      <span className="sync-source-details">
+        <span className="sync-source-name">{label}</span>
+        {!isPending && progress.source !== "bracelet" && progress.issue?.message ? (
+          <span className="sync-source-message">{progress.issue.message}</span>
+        ) : null}
+      </span>
       <span className="sync-source-result">
         {isPending ? (
           <span className="sync-spinner" aria-label={`Обновление: ${label}`}>
@@ -128,10 +134,20 @@ const SyncSourceItem = observer(function SyncSourceItem({
           </span>
         ) : (
           <span className="sync-source-timestamp">
-            {progress.display || progress.status}
+            {statusLabel}
           </span>
         )}
       </span>
     </li>
   );
 });
+
+function sourceStatusLabel(progress: SourceSyncProgress): string {
+  if (progress.status === "success") {
+    return progress.display ? `Обновлено: ${progress.display}` : "Обновлено";
+  }
+  if (progress.status === "partial") return "Обновлено частично";
+  if (progress.status === "failed") return "Не обновлено";
+  if (progress.display) return progress.display;
+  return "Не запускалось";
+}

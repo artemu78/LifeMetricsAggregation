@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta, timezone
+from email.utils import parsedate_to_datetime
 from hashlib import sha256
-from time import monotonic
+from math import isfinite
+from time import monotonic, sleep
 from typing import Callable
 from urllib.error import HTTPError
 from urllib.parse import urlencode
@@ -13,6 +15,86 @@ import os
 
 from .config import Config
 from .db import connect, insert_metric, utc_now
+
+
+MAX_RETRY_DELAY_SECONDS = 30.0
+
+
+class RescueTimeFetchError(RuntimeError):
+    """A privacy-safe RescueTime failure with enough detail for recovery UI."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        http_status: int | None,
+        stage: str,
+        retry_after: str | None = None,
+    ):
+        super().__init__(message)
+        self.http_status = http_status
+        self.stage = stage
+        self.retry_after = retry_after
+
+    @property
+    def retryable(self) -> bool:
+        return self.http_status in {429, 500, 502, 503, 504}
+
+
+class TodoistRequestError(RuntimeError):
+    """A privacy-safe Todoist failure retaining only recovery context."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        http_status: int,
+        request_kind: str,
+        historical_activity: bool = False,
+    ):
+        super().__init__(message)
+        self.http_status = http_status
+        self.request_kind = request_kind
+        self.historical_activity = historical_activity
+
+
+def _retry_delay_seconds(retry_after: str | None, attempt: int) -> float:
+    """Return a bounded server-requested delay or a short exponential fallback."""
+    delay = None
+    if retry_after:
+        try:
+            delay = float(retry_after)
+        except ValueError:
+            try:
+                retry_at = parsedate_to_datetime(retry_after)
+                if retry_at.tzinfo is None:
+                    retry_at = retry_at.replace(tzinfo=timezone.utc)
+                delay = (retry_at - datetime.now(timezone.utc)).total_seconds()
+            except (TypeError, ValueError, OverflowError):
+                pass
+    if delay is None or not isfinite(delay) or delay < 0:
+        delay = 2 ** attempt
+    return min(delay, MAX_RETRY_DELAY_SECONDS)
+
+
+def _get_todoist_json(
+    url: str,
+    token: str,
+    *,
+    request_kind: str,
+    historical_activity: bool = False,
+) -> object:
+    try:
+        return _get_json(url, token)
+    except HTTPError as exc:
+        status = exc.code
+        exc.close()
+        raise TodoistRequestError(
+            f"Todoist {request_kind} request failed (HTTP {status})",
+            http_status=status,
+            request_kind=request_kind,
+            historical_activity=historical_activity,
+        ) from None
 
 
 def logical_window(day: date, config: Config) -> tuple[datetime, datetime]:
@@ -71,6 +153,11 @@ def _fetch_rescuetime(config: Config, url: str, token: str, day: date, taxonomy:
     except Exception as exc:
         reason = getattr(exc, "reason", exc)
         status = exc.code if isinstance(exc, HTTPError) else None
+        retry_after = (
+            exc.headers.get("Retry-After")
+            if isinstance(exc, HTTPError) and exc.headers is not None
+            else None
+        )
         elapsed = round(monotonic() - started, 3)
         _rescuetime_log(config, "request_failed", **context, stage=stage,
                        elapsed_seconds=elapsed, error_type=type(exc).__name__,
@@ -78,9 +165,12 @@ def _fetch_rescuetime(config: Config, url: str, token: str, day: date, taxonomy:
         if isinstance(exc, HTTPError):
             exc.close()
         detail = f"HTTP {status}" if status is not None else type(reason).__name__
-        raise RuntimeError(
+        raise RescueTimeFetchError(
             f"RescueTime {day} {taxonomy}: {stage} failed after {elapsed:.1f}s "
-            f"({detail}); diagnostics: {config.root / 'data/logs/rescuetime.jsonl'}"
+            f"({detail}); diagnostics: {config.root / 'data/logs/rescuetime.jsonl'}",
+            http_status=status,
+            stage=stage,
+            retry_after=retry_after,
         ) from None
     _rescuetime_log(config, "request_succeeded", **context,
                    elapsed_seconds=round(monotonic() - started, 3))
@@ -94,6 +184,7 @@ def collect_rescuetime(config: Config, day: date) -> dict[str, int]:
         return {"queries": 0, "events": 0, "skipped_no_token": 1}
     start, end = logical_window(day, config)
     inserted = queries = 0
+    failures: list[RescueTimeFetchError] = []
     with connect(config.database) as conn:
         for taxonomy in ("productivity", "activity"):
             params = urlencode(
@@ -106,7 +197,30 @@ def collect_rescuetime(config: Config, day: date) -> dict[str, int]:
                     "format": "json",
                 }
             )
-            payload = _fetch_rescuetime(config, f"{config.rescuetime_api_url}?{params}", token, day, taxonomy)
+            url = f"{config.rescuetime_api_url}?{params}"
+            fetch_failure = None
+            for attempt in range(3):
+                try:
+                    payload = _fetch_rescuetime(config, url, token, day, taxonomy)
+                    break
+                except RescueTimeFetchError as exc:
+                    if not exc.retryable or attempt == 2:
+                        fetch_failure = exc
+                        break
+                    delay_seconds = _retry_delay_seconds(exc.retry_after, attempt)
+                    _rescuetime_log(
+                        config,
+                        "request_retrying",
+                        day=day.isoformat(),
+                        taxonomy=taxonomy,
+                        attempt=attempt + 2,
+                        http_status=exc.http_status,
+                        delay_seconds=delay_seconds,
+                    )
+                    sleep(delay_seconds)
+            if fetch_failure is not None:
+                failures.append(fetch_failure)
+                continue
             queries += 1
             headers = payload.get("row_headers", [])
             for values in payload.get("rows", []):
@@ -160,6 +274,8 @@ def collect_rescuetime(config: Config, day: date) -> dict[str, int]:
                     payload=row,
                 ):
                     inserted += 1
+        if failures:
+            raise failures[0]
     _rescuetime_log(config, "collection_saved", day=day.isoformat(), queries=queries)
     return {"queries": queries, "events": inserted, "skipped_no_token": 0}
 
@@ -183,7 +299,11 @@ def collect_todoist(config: Config, day: date) -> dict[str, int]:
                 f"{config.todoist_api_base_url}/tasks/completed/by_completion_date?"
                 + urlencode(params)
             )
-            payload = _get_json(url, token)
+            payload = _get_todoist_json(
+                url,
+                token,
+                request_kind="completed_tasks",
+            )
             for item in payload.get("items", []):
                 completed_at = item.get("completed_at")
                 if not completed_at:
@@ -244,8 +364,12 @@ def collect_todoist(config: Config, day: date) -> dict[str, int]:
             }
             if cursor:
                 params["cursor"] = cursor
-            payload = _get_json(
-                f"{config.todoist_api_base_url}/activities?" + urlencode(params), token
+            activity_history_cutoff = datetime.now(ZoneInfo(config.timezone)).date() - timedelta(days=6)
+            payload = _get_todoist_json(
+                f"{config.todoist_api_base_url}/activities?" + urlencode(params),
+                token,
+                request_kind="activity",
+                historical_activity=day < activity_history_cutoff,
             )
             for event in payload.get("results", []):
                 deleted_at = event.get("event_date") or event.get("date") or event.get("timestamp")
@@ -302,7 +426,11 @@ def collect_todoist(config: Config, day: date) -> dict[str, int]:
             params = {"limit": 200}
             if cursor:
                 params["cursor"] = cursor
-            payload = _get_json(f"{config.todoist_api_base_url}/tasks?" + urlencode(params), token)
+            payload = _get_todoist_json(
+                f"{config.todoist_api_base_url}/tasks?" + urlencode(params),
+                token,
+                request_kind="tasks",
+            )
             items = payload.get("results", payload) if isinstance(payload, dict) else payload
             for item in items:
                 created_at = item.get("created_at") or item.get("added_at")
