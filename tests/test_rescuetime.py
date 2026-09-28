@@ -79,12 +79,13 @@ class RescueTimeDiagnosticsTest(TestCase):
             for _ in range(3)
         ]
         payload = json.dumps({'row_headers': [], 'rows': []}).encode()
+        day = date(2026, 9, 11)
         with patch('live_life.collectors.sleep') as wait, patch(
                 'live_life.collectors.urlopen',
                 side_effect=[*errors, BytesIO(payload)],
-                ) as request:
+            ) as request:
             with self.assertRaisesRegex(RuntimeError, 'productivity'):
-                collect_rescuetime(self.config, date(2026, 9, 11))
+                collect_rescuetime(self.config, day)
 
         self.assertEqual(request.call_count, 4)
         self.assertEqual([call.args[0] for call in wait.call_args_list], [1, 2])
