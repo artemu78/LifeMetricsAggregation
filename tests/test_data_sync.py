@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from contextlib import redirect_stderr, redirect_stdout
 from datetime import date
-from io import StringIO
+from io import BytesIO, StringIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import json
@@ -11,8 +11,9 @@ from unittest.mock import Mock, patch
 from urllib.error import HTTPError
 
 from live_life.api_models import DashboardSyncResponse
+from live_life.collectors import TodoistRequestError, _get_todoist_json
 from live_life.config import Config
-from live_life.data_sync_json import _summary_status, _sync_collector, main
+from live_life.data_sync_json import _collector_issue, _summary_status, _sync_collector, main
 from live_life.db import connect
 
 
@@ -76,7 +77,12 @@ class DashboardDataSyncTest(unittest.TestCase):
                 welltory_pattern="*.csv", rescuetime_key_env="RESCUETIME_API_KEY",
                 todoist_token_env="TODOIST_API_TOKEN",
             )
-            error = HTTPError("https://example.invalid", 403, "Forbidden", {}, None)
+            error = TodoistRequestError(
+                "Todoist activity request failed (HTTP 403)",
+                http_status=403,
+                request_kind="activity",
+                historical_activity=True,
+            )
             with redirect_stderr(StringIO()):
                 result = _sync_collector(
                     config, "todoist", Mock(side_effect=error),
@@ -87,6 +93,46 @@ class DashboardDataSyncTest(unittest.TestCase):
             self.assertEqual(result["status"], "failed")
             self.assertEqual(result["issue"]["code"], "TODOIST_HISTORY_UNAVAILABLE")
             self.assertIn("7 дней", result["issue"]["message"])
+
+    def test_todoist_non_history_403_has_permission_issue(self):
+        for request_kind, historical_activity in (
+            ("completed_tasks", False),
+            ("tasks", False),
+            ("activity", False),
+        ):
+            with self.subTest(request_kind=request_kind):
+                error = TodoistRequestError(
+                    f"Todoist {request_kind} request failed (HTTP 403)",
+                    http_status=403,
+                    request_kind=request_kind,
+                    historical_activity=historical_activity,
+                )
+                result = _collector_issue("todoist", exc=error)
+                self.assertEqual(result["code"], "TODOIST_PERMISSION_DENIED")
+                self.assertIn("токен", result["message"])
+
+    def test_todoist_request_retains_safe_endpoint_context(self):
+        error = HTTPError(
+            "https://example.invalid/private",
+            403,
+            "Forbidden",
+            {},
+            BytesIO(b"private response"),
+        )
+        with patch("live_life.collectors._get_json", side_effect=error):
+            with self.assertRaises(TodoistRequestError) as raised:
+                _get_todoist_json(
+                    "https://example.invalid/private",
+                    "secret-token",
+                    request_kind="activity",
+                    historical_activity=True,
+                )
+
+        self.assertEqual(raised.exception.http_status, 403)
+        self.assertEqual(raised.exception.request_kind, "activity")
+        self.assertTrue(raised.exception.historical_activity)
+        self.assertNotIn("private", str(raised.exception))
+        self.assertNotIn("secret-token", str(raised.exception))
 
     @patch("live_life.data_sync_json.collect_todoist")
     @patch("live_life.data_sync_json.collect_rescuetime")

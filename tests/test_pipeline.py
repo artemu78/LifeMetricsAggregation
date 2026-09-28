@@ -5,15 +5,16 @@ from datetime import date, datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from contextlib import ExitStack, redirect_stderr, redirect_stdout
-from io import StringIO
+from io import BytesIO, StringIO
 import csv
 import json
 import os
 import sqlite3
 import unittest
 from unittest.mock import patch
+from urllib.error import HTTPError
 
-from live_life.collectors import collect_todoist
+from live_life.collectors import TodoistRequestError, collect_todoist
 from live_life.config import Config, ensure_layout
 from live_life.cli import _date_range
 from live_life.db import connect, insert_metric
@@ -478,6 +479,25 @@ class PipelineTest(unittest.TestCase):
         self.assertEqual(result["created"], 1)
         with connect(self.config.database) as conn:
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM created_tasks").fetchone()[0], 1)
+
+    def test_todoist_historical_activity_403_retains_history_context(self):
+        completed = {"items": [], "next_cursor": None}
+        activity_error = HTTPError(
+            "https://example.invalid/private",
+            403,
+            "Forbidden",
+            {},
+            BytesIO(b"private response"),
+        )
+        with patch.dict(os.environ, {"TEST_TODOIST_TOKEN": "test-token"}), patch(
+            "live_life.collectors._get_json",
+            side_effect=[completed, activity_error],
+        ):
+            with self.assertRaises(TodoistRequestError) as raised:
+                collect_todoist(self.config, date(2000, 1, 1))
+
+        self.assertEqual(raised.exception.request_kind, "activity")
+        self.assertTrue(raised.exception.historical_activity)
 
     def setUp(self):
         """Create isolated temporary paths and configuration for each test."""

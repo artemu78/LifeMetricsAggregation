@@ -41,6 +41,23 @@ class RescueTimeFetchError(RuntimeError):
         return self.http_status in {429, 500, 502, 503, 504}
 
 
+class TodoistRequestError(RuntimeError):
+    """A privacy-safe Todoist failure retaining only recovery context."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        http_status: int,
+        request_kind: str,
+        historical_activity: bool = False,
+    ):
+        super().__init__(message)
+        self.http_status = http_status
+        self.request_kind = request_kind
+        self.historical_activity = historical_activity
+
+
 def _retry_delay_seconds(retry_after: str | None, attempt: int) -> float:
     """Return a bounded server-requested delay or a short exponential fallback."""
     delay = None
@@ -58,6 +75,26 @@ def _retry_delay_seconds(retry_after: str | None, attempt: int) -> float:
     if delay is None or not isfinite(delay) or delay < 0:
         delay = 2 ** attempt
     return min(delay, MAX_RETRY_DELAY_SECONDS)
+
+
+def _get_todoist_json(
+    url: str,
+    token: str,
+    *,
+    request_kind: str,
+    historical_activity: bool = False,
+) -> object:
+    try:
+        return _get_json(url, token)
+    except HTTPError as exc:
+        status = exc.code
+        exc.close()
+        raise TodoistRequestError(
+            f"Todoist {request_kind} request failed (HTTP {status})",
+            http_status=status,
+            request_kind=request_kind,
+            historical_activity=historical_activity,
+        ) from None
 
 
 def logical_window(day: date, config: Config) -> tuple[datetime, datetime]:
@@ -262,7 +299,11 @@ def collect_todoist(config: Config, day: date) -> dict[str, int]:
                 f"{config.todoist_api_base_url}/tasks/completed/by_completion_date?"
                 + urlencode(params)
             )
-            payload = _get_json(url, token)
+            payload = _get_todoist_json(
+                url,
+                token,
+                request_kind="completed_tasks",
+            )
             for item in payload.get("items", []):
                 completed_at = item.get("completed_at")
                 if not completed_at:
@@ -323,8 +364,12 @@ def collect_todoist(config: Config, day: date) -> dict[str, int]:
             }
             if cursor:
                 params["cursor"] = cursor
-            payload = _get_json(
-                f"{config.todoist_api_base_url}/activities?" + urlencode(params), token
+            activity_history_cutoff = datetime.now(ZoneInfo(config.timezone)).date() - timedelta(days=6)
+            payload = _get_todoist_json(
+                f"{config.todoist_api_base_url}/activities?" + urlencode(params),
+                token,
+                request_kind="activity",
+                historical_activity=day < activity_history_cutoff,
             )
             for event in payload.get("results", []):
                 deleted_at = event.get("event_date") or event.get("date") or event.get("timestamp")
@@ -381,7 +426,11 @@ def collect_todoist(config: Config, day: date) -> dict[str, int]:
             params = {"limit": 200}
             if cursor:
                 params["cursor"] = cursor
-            payload = _get_json(f"{config.todoist_api_base_url}/tasks?" + urlencode(params), token)
+            payload = _get_todoist_json(
+                f"{config.todoist_api_base_url}/tasks?" + urlencode(params),
+                token,
+                request_kind="tasks",
+            )
             items = payload.get("results", payload) if isinstance(payload, dict) else payload
             for item in items:
                 created_at = item.get("created_at") or item.get("added_at")

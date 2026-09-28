@@ -7,7 +7,12 @@ import sys
 import traceback
 from urllib.error import HTTPError, URLError
 
-from .collectors import RescueTimeFetchError, collect_rescuetime, collect_todoist
+from .collectors import (
+    RescueTimeFetchError,
+    TodoistRequestError,
+    collect_rescuetime,
+    collect_todoist,
+)
 from .config import load_config
 from .db import connect, record_source_run
 from .fitness_drive import sync_fitness_drive
@@ -30,6 +35,19 @@ def _log_source_failure(source: str, start: date, end: date, exc: Exception) -> 
             type(exc).__name__,
             exc.code,
             exc.msg,
+        )
+        return
+
+    if isinstance(exc, TodoistRequestError):
+        LOGGER.error(
+            "dashboard_source_sync_failed source=%s from=%s to=%s "
+            "error_type=%s http_status=%s request_kind=%s",
+            source,
+            start.isoformat(),
+            end.isoformat(),
+            type(exc).__name__,
+            exc.http_status,
+            exc.request_kind,
         )
         return
 
@@ -87,16 +105,25 @@ def _collector_issue(source: str, exc: Exception | None = None, skip_reason: str
             "action": "configure",
             "steps": [f"Добавьте токен {label} в файл .env и повторите импорт."],
         }
-    if source == "todoist" and isinstance(exc, HTTPError) and exc.code == 403:
+    if source == "todoist" and isinstance(exc, TodoistRequestError) and exc.http_status == 403:
+        if exc.request_kind == "activity" and exc.historical_activity:
+            return {
+                "code": "TODOIST_HISTORY_UNAVAILABLE",
+                "message": (
+                    "Todoist не отдал историю действий за часть выбранного периода. "
+                    "На бесплатном тарифе она доступна только за последние 7 дней."
+                ),
+                "action": "configure",
+                "steps": [
+                    "Выберите период в пределах последних 7 дней или проверьте тариф и доступ к истории действий в Todoist."
+                ],
+            }
         return {
-            "code": "TODOIST_HISTORY_UNAVAILABLE",
-            "message": (
-                "Todoist не отдал историю за часть выбранного периода. "
-                "На бесплатном тарифе история доступна только за последние 7 дней."
-            ),
+            "code": "TODOIST_PERMISSION_DENIED",
+            "message": "Todoist отклонил запрос. Проверьте токен и разрешения аккаунта.",
             "action": "configure",
             "steps": [
-                "Выберите период в пределах последних 7 дней или проверьте тариф и доступ к истории в Todoist."
+                "Создайте новый API-токен Todoist, обновите TODOIST_API_TOKEN в .env и повторите импорт."
             ],
         }
     if source == "rescuetime" and isinstance(exc, RescueTimeFetchError):
