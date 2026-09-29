@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
 
+test.use({ locale: "ru-RU" });
+
 const day = (date: string, weekday: number) => ({
   date,
   weekday,

@@ -1,3 +1,4 @@
+import { t } from "../i18n";
 import { CircleHelp, X } from "lucide-react";
 import { observer } from "mobx-react-lite";
 import { useEffect, useRef } from "react";
@@ -31,7 +32,7 @@ export const DashboardLegend = observer(function DashboardLegend() {
       <button
         className="help-button"
         onClick={() => store.toggleHelp()}
-        aria-label="Легенда качества и источников"
+        aria-label={t("Легенда качества и источников")}
         aria-expanded={store.helpOpen}
         aria-controls="dashboard-legend"
       >
@@ -44,17 +45,17 @@ export const DashboardLegend = observer(function DashboardLegend() {
           aria-labelledby="legend-title"
         >
           <div className="legend-header">
-            <h2 id="legend-title">Легенда</h2>
+            <h2 id="legend-title">{t("Легенда")}</h2>
             <button
               className="legend-close"
               onClick={() => store.closeHelp()}
-              aria-label="Закрыть легенду"
+              aria-label={t("Закрыть легенду")}
             >
               <X aria-hidden="true" />
             </button>
           </div>
           <section aria-labelledby="quality-legend-title">
-            <h3 id="quality-legend-title">Цвет карточки</h3>
+            <h3 id="quality-legend-title">{t("Цвет карточки")}</h3>
             {Object.entries(QUALITY).map(([key, label]) => (
               <p key={key}>
                 <i className={`legend-dot quality-${key}`} />
@@ -66,7 +67,7 @@ export const DashboardLegend = observer(function DashboardLegend() {
             className="source-legend"
             aria-labelledby="source-legend-title"
           >
-            <h3 id="source-legend-title">Иконки источников</h3>
+            <h3 id="source-legend-title">{t("Иконки источников")}</h3>
             {SOURCE_ICONS.map(({ name, description, Icon }) => (
               <p key={name}>
                 <i className="legend-source-icon">
@@ -79,7 +80,9 @@ export const DashboardLegend = observer(function DashboardLegend() {
               </p>
             ))}
             <p className="legend-note">
-              Зелёная иконка — данные источника доступны; серая — недоступны.
+              {t(
+                "Зелёная иконка — данные источника доступны; серая — недоступны.",
+              )}
             </p>
           </section>
         </aside>

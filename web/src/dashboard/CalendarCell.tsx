@@ -1,3 +1,4 @@
+import { t, locale } from "../i18n";
 import { PRODUCTIVITY_MARKER_GRADIENT } from "../shared/chartConfig";
 import { Footprints, ListTodo, MonitorSmartphone, Moon } from "lucide-react";
 import { Link } from "react-router";
@@ -20,7 +21,11 @@ export function CalendarCell({ day }: Readonly<{ day: DashboardDay }>) {
   const productivityIndex = rescueOverview.productivityIndex;
   const rescueTimeLabel =
     rescueOverview.totalTrackedSeconds > 0
-      ? ` Отслежено ${trackedDuration}. Индекс продуктивности: ${productivityIndex ?? "нет данных"}.`
+      ? t(
+          " Отслежено {0}. Индекс продуктивности: {1}.",
+          trackedDuration,
+          productivityIndex ?? t("нет данных"),
+        )
       : "";
   return (
     <Link
@@ -47,7 +52,7 @@ export function CalendarCell({ day }: Readonly<{ day: DashboardDay }>) {
 
 function SourceIndicators({ day }: Readonly<{ day: DashboardDay }>) {
   return (
-    <div className="indicators" aria-label="Источники">
+    <div className="indicators" aria-label={t("Источники")}>
       {SOURCE_ICONS.map(({ key, name, Icon }) => {
         const available = isSourceAvailable(day, key);
         return (
@@ -55,7 +60,7 @@ function SourceIndicators({ day }: Readonly<{ day: DashboardDay }>) {
             key={key}
             className={available ? "on" : ""}
             title={name}
-            aria-label={`${name}: ${available ? "данные доступны" : "нет данных"}`}
+            aria-label={`${name}: ${available ? t("данные доступны") : t("нет данных")}`}
           >
             <Icon aria-hidden="true" />
           </span>
@@ -79,26 +84,31 @@ function CalendarMetrics({
       <div>
         <span className="numbers-label">
           <Moon aria-hidden="true" />
-          Сон
+          {t("Сон")}
         </span>
       </div>
       <b>{formatSleepDuration(day.bracelet.sleepSeconds)}</b>
       <div>
         <span className="numbers-label">
           <Footprints aria-hidden="true" />
-          Шаги
+          {t("Шаги")}
         </span>
       </div>
-      <b>{day.bracelet.steps?.toLocaleString("ru-RU") ?? "—"}</b>
+      <b>{day.bracelet.steps?.toLocaleString(locale) ?? "—"}</b>
       <div>
         <span className="numbers-label">
           <ListTodo aria-hidden="true" width={24} height={24} />
-          Задачи <br />
-          (созд. / закр. / удал.)
+          {t("Задачи")} <br />
+          {t("(созд. / закр. / удал.)")}
         </span>
       </div>
       <div
-        title={`Создано: ${day.todoist.created}, Закрыто: ${day.todoist.completed}, Удалено: ${day.todoist.deleted}`}
+        title={t(
+          "Создано: {0}, Закрыто: {1}, Удалено: {2}",
+          day.todoist.created,
+          day.todoist.completed,
+          day.todoist.deleted,
+        )}
       >
         <b>
           {day.todoist.created} / {day.todoist.completed} /{" "}
@@ -110,7 +120,7 @@ function CalendarMetrics({
           <div>
             <span className="numbers-label">
               <MonitorSmartphone aria-hidden="true" />
-              Экранное время
+              {t("Экранное время")}
             </span>
           </div>
           <div>
@@ -126,7 +136,7 @@ function ProductivityMarker({ index }: Readonly<{ index: number | null }>) {
   const color = index == null ? undefined : productivityIndexColor(index);
   return (
     <div className="calendar-rescuetime" aria-hidden="true">
-      <div className="numbers-label">Продуктивность</div>
+      <div className="numbers-label">{t("Продуктивность")}</div>
       <div className="calendar-productivity-scale">
         {index != null && (
           <b

@@ -1,3 +1,4 @@
+import { t } from "../i18n";
 import { OXYGEN_CHART } from "../shared/chartConfig";
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import { useRef } from "react";
@@ -57,26 +58,33 @@ export function DayModal({
       >
         <header>
           <div className="day-heading">
-            <p className="eyebrow">Подробности дня</p>
+            <p className="eyebrow">{t("Подробности дня")}</p>
             <h2 id="day-title">{day.date}</h2>
-            <nav className="day-navigation" aria-label="Навигация по датам">
+            <nav
+              className="day-navigation"
+              aria-label={t("Навигация по датам")}
+            >
               <button
                 className="date-navigation-button"
                 onClick={() => previousDate && selectDate(previousDate)}
                 disabled={!previousDate}
               >
-                <ChevronLeft aria-hidden="true" /> Предыдущая дата
+                <ChevronLeft aria-hidden="true" /> {t("Предыдущая дата")}
               </button>
               <button
                 className="date-navigation-button"
                 onClick={() => nextDate && selectDate(nextDate)}
                 disabled={!nextDate}
               >
-                Следующая дата <ChevronRight aria-hidden="true" />
+                {t("Следующая дата")} <ChevronRight aria-hidden="true" />
               </button>
             </nav>
           </div>
-          <button className="icon-button" onClick={close} aria-label="Закрыть">
+          <button
+            className="icon-button"
+            onClick={close}
+            aria-label={t("Закрыть")}
+          >
             <X aria-hidden="true" />
           </button>
         </header>

@@ -1,3 +1,4 @@
+import { t, serverMessage } from "../i18n";
 import { RefreshCw, X } from "lucide-react";
 import { observer } from "mobx-react-lite";
 import { useRef } from "react";
@@ -23,14 +24,14 @@ export const SyncModal = observer(function SyncModal() {
       >
         <header className="sync-modal-header">
           <div>
-            <p className="eyebrow">Синхронизация данных</p>
-            <h2 id="sync-modal-title">Обновление данных</h2>
+            <p className="eyebrow">{t("Синхронизация данных")}</p>
+            <h2 id="sync-modal-title">{t("Обновление данных")}</h2>
           </div>
           <button
             type="button"
             className="icon-button"
             onClick={() => store.closeSyncModal()}
-            aria-label="Закрыть окно обновления"
+            aria-label={t("Закрыть окно обновления")}
           >
             <X aria-hidden="true" />
           </button>
@@ -39,7 +40,7 @@ export const SyncModal = observer(function SyncModal() {
         <div className="sync-modal-body">
           <SyncStatusBanner />
 
-          <ul className="sync-source-list" aria-label="Источники данных">
+          <ul className="sync-source-list" aria-label={t("Источники данных")}>
             {SYNC_SOURCES.map(({ key, label }) => (
               <SyncSourceItem
                 key={key}
@@ -64,7 +65,7 @@ export const SyncModal = observer(function SyncModal() {
             className="button primary"
             onClick={() => store.closeSyncModal()}
           >
-            Закрыть
+            {t("Закрыть")}
           </button>
         </footer>
       </dialog>
@@ -83,7 +84,7 @@ const SyncStatusBanner = observer(function SyncStatusBanner() {
     return (
       <div className="sync-status-banner in-progress">
         <RefreshCw className="spinning" aria-hidden="true" />
-        <span>Обновляем источники…</span>
+        <span>{t("Обновляем источники…")}</span>
       </div>
     );
   } else if (
@@ -96,13 +97,13 @@ const SyncStatusBanner = observer(function SyncStatusBanner() {
   ) {
     return (
       <output className="sync-status-banner error">
-        Обновление завершено не для всех источников
+        {t("Обновление завершено не для всех источников")}
       </output>
     );
   } else {
     return (
       <div className="sync-status-banner success">
-        <span>Обновление завершено</span>
+        <span>{t("Обновление завершено")}</span>
       </div>
     );
   }
@@ -123,19 +124,24 @@ const SyncSourceItem = observer(function SyncSourceItem({
     >
       <span className="sync-source-details">
         <span className="sync-source-name">{label}</span>
-        {!isPending && progress.source !== "bracelet" && progress.issue?.message ? (
-          <span className="sync-source-message">{progress.issue.message}</span>
+        {!isPending &&
+        progress.source !== "bracelet" &&
+        progress.issue?.message ? (
+          <span className="sync-source-message">
+            {serverMessage(progress.issue.message)}
+          </span>
         ) : null}
       </span>
       <span className="sync-source-result">
         {isPending ? (
-          <span className="sync-spinner" aria-label={`Обновление: ${label}`}>
+          <span
+            className="sync-spinner"
+            aria-label={t("Обновление: {0}", label)}
+          >
             <RefreshCw className="spinning" aria-hidden="true" />
           </span>
         ) : (
-          <span className="sync-source-timestamp">
-            {statusLabel}
-          </span>
+          <span className="sync-source-timestamp">{statusLabel}</span>
         )}
       </span>
     </li>
@@ -144,10 +150,12 @@ const SyncSourceItem = observer(function SyncSourceItem({
 
 function sourceStatusLabel(progress: SourceSyncProgress): string {
   if (progress.status === "success") {
-    return progress.display ? `Обновлено: ${progress.display}` : "Обновлено";
+    return progress.display
+      ? t("Обновлено: {0}", serverMessage(progress.display))
+      : t("Обновлено");
   }
-  if (progress.status === "partial") return "Обновлено частично";
-  if (progress.status === "failed") return "Не обновлено";
-  if (progress.display) return progress.display;
-  return "Не запускалось";
+  if (progress.status === "partial") return t("Обновлено частично");
+  if (progress.status === "failed") return t("Не обновлено");
+  if (progress.display) return serverMessage(progress.display);
+  return t("Не запускалось");
 }

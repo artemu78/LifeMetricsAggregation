@@ -1,3 +1,4 @@
+import { t } from "../i18n";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 import { buildRescueTimeOverview, PRODUCTIVITY_LABELS } from "../dayDetail";
 import {
@@ -29,10 +30,10 @@ export function RescueTimePanel({
       <div className="panel-heading">
         <div>
           <h3>RescueTime</h3>
-          <p className="muted">Обзор отслеженного времени</p>
+          <p className="muted">{t("Обзор отслеженного времени")}</p>
         </div>
         <div className="tracked-total">
-          <span>Всего отслежено</span>
+          <span>{t("Всего отслежено")}</span>
           <strong>{formatDuration(rescueOverview.totalTrackedSeconds)}</strong>
         </div>
       </div>
@@ -44,7 +45,7 @@ export function RescueTimePanel({
           <ActivityRanking rescueOverview={rescueOverview} />
         </div>
       ) : (
-        <p className="muted">Нет отслеженного времени</p>
+        <p className="muted">{t("Нет отслеженного времени")}</p>
       )}
 
       {rescueIntervals.length > 0 && (
@@ -54,8 +55,9 @@ export function RescueTimePanel({
         />
       )}
       <p className="note">
-        Активность и продуктивность — разные классификации одного времени и не
-        складываются.
+        {t(
+          "Активность и продуктивность — разные классификации одного времени и не складываются.",
+        )}
       </p>
     </section>
   );
@@ -70,15 +72,18 @@ function ProductivitySummary({
 }>) {
   return (
     <div className="productivity-summary">
-      <h4>Индекс продуктивности</h4>
+      <h4>{t("Индекс продуктивности")}</h4>
       {rescueOverview.productivityIndex == null ? (
-        <p className="muted">Нет данных продуктивности</p>
+        <p className="muted">{t("Нет данных продуктивности")}</p>
       ) : (
         <>
           <div
             className="productivity-chart"
             role="img"
-            aria-label={`Индекс продуктивности: ${rescueOverview.productivityIndex} из 100`}
+            aria-label={t(
+              "Индекс продуктивности: {0} из 100",
+              rescueOverview.productivityIndex,
+            )}
           >
             <ResponsiveContainer width="100%" height={DETAIL_CHART_HEIGHT}>
               <PieChart>
@@ -105,7 +110,7 @@ function ProductivitySummary({
             </ResponsiveContainer>
             <div className="productivity-chart-value">
               <strong>{rescueOverview.productivityIndex}</strong>
-              <span>из 100</span>
+              <span>{t("из 100")}</span>
             </div>
           </div>
           <ul className="productivity-legend">
@@ -125,7 +130,9 @@ function ProductivitySummary({
           </ul>
         </>
       )}
-      <p className="note">Локальный расчёт по уровням RescueTime от −2 до 2.</p>
+      <p className="note">
+        {t("Локальный расчёт по уровням RescueTime от −2 до 2.")}
+      </p>
     </div>
   );
 }
@@ -137,7 +144,7 @@ function ActivityRanking({
 }>) {
   return (
     <div className="activity-ranking">
-      <h4>Основные активности</h4>
+      <h4>{t("Основные активности")}</h4>
       {rescueOverview.categories
         .slice(0, ACTIVITY_RANK_LIMIT)
         .map((category, index) => (
@@ -171,7 +178,7 @@ function ActivityIntervals({
 }>) {
   return (
     <div className="rescuetime-intervals">
-      <h4>Интервалы активности</h4>
+      <h4>{t("Интервалы активности")}</h4>
       <ul className="record-list scrollable-records">
         {rescueIntervals.map((item) => (
           <li key={`${item.timestamp}-${item.perspective}-${item.label}`}>

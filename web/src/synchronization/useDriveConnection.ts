@@ -1,3 +1,4 @@
+import { t, serverMessage } from "../i18n";
 import { useEffect, useRef, useState } from "react";
 import type { components } from "../generated/api-types";
 import { JSON_HEADERS } from "../shared/sourceConfig";
@@ -15,7 +16,9 @@ async function connectionRequest(
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
     throw new Error(
-      body.message ?? "Не удалось связаться с приложением. Повторите действие.",
+      body.message
+        ? serverMessage(body.message)
+        : t("Не удалось связаться с приложением. Повторите действие."),
     );
   }
   return response.json();
@@ -53,7 +56,7 @@ export function useDriveConnection() {
         setMessage(
           error instanceof Error
             ? error.message
-            : "Не удалось проверить подключение.",
+            : t("Не удалось проверить подключение."),
         );
       }
     };
@@ -79,7 +82,7 @@ export function useDriveConnection() {
         setMessage(
           error instanceof Error
             ? error.message
-            : "Не удалось начать подключение.",
+            : t("Не удалось начать подключение."),
         );
     } finally {
       if (current === sequence.current) setBusy(false);
@@ -91,7 +94,9 @@ export function useDriveConnection() {
     setMessage(null);
     if (file.size > MAX_CLIENT_FILE_BYTES) {
       setMessage(
-        "Файл слишком большой. Выберите JSON OAuth-клиента типа Desktop app, скачанный из Google Cloud.",
+        t(
+          "Файл слишком большой. Выберите JSON OAuth-клиента типа Desktop app, скачанный из Google Cloud.",
+        ),
       );
       return;
     }
@@ -108,12 +113,16 @@ export function useDriveConnection() {
       setConnection(next);
       if (next.status !== "failed")
         setMessage(
-          "Настройки сохранены на этом компьютере. Теперь подключите Google Drive.",
+          t(
+            "Настройки сохранены на этом компьютере. Теперь подключите Google Drive.",
+          ),
         );
     } catch (error) {
       if (current === sequence.current)
         setMessage(
-          error instanceof Error ? error.message : "Не удалось сохранить файл.",
+          error instanceof Error
+            ? error.message
+            : t("Не удалось сохранить файл."),
         );
     } finally {
       if (current === sequence.current) setBusy(false);

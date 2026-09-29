@@ -1,3 +1,4 @@
+import { t, locale } from "../i18n";
 import { X } from "lucide-react";
 import { observer } from "mobx-react-lite";
 import { useEffect, useRef } from "react";
@@ -7,7 +8,7 @@ import { dashboardStore as store } from "../store";
 import { DayTimelineChart } from "../timeline/DayTimelineChart";
 import { DayModal } from "./DayModal";
 
-const TIMELINE_DATE_FORMAT = new Intl.DateTimeFormat("ru-RU", {
+const TIMELINE_DATE_FORMAT = new Intl.DateTimeFormat(locale, {
   day: "numeric",
   month: "long",
   year: "numeric",
@@ -46,29 +47,29 @@ export const TimelineRoute = observer(function TimelineRoute() {
       <button
         type="button"
         className="timeline-backdrop-dismiss"
-        aria-label="Закрыть Ход дня"
+        aria-label={t("Закрыть Ход дня")}
         onClick={closeTimeline}
       />
       <section className="modal timeline-modal">
         <header>
           <div>
             <p className="eyebrow">
-              Хронология дня · {store.dashboard.timezone}
+              {t("Хронология дня ·")} {store.dashboard.timezone}
             </p>
             <h2 id="timeline-title" className="timeline-title">
-              Ход дня{" "}
+              {t("Ход дня")}{" "}
               <time>
                 {TIMELINE_DATE_FORMAT.format(new Date(`${day.date}T12:00:00Z`))}
               </time>
             </h2>
             <p className="muted">
-              Все сохранённые измерения и события в порядке времени
+              {t("Все сохранённые измерения и события в порядке времени")}
             </p>
           </div>
           <button
             className="icon-button"
             onClick={closeTimeline}
-            aria-label="Закрыть"
+            aria-label={t("Закрыть")}
           >
             <X aria-hidden="true" />
           </button>

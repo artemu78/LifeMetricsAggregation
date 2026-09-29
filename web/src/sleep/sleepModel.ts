@@ -1,3 +1,4 @@
+import { t } from "../i18n";
 import type { components } from "../generated/api-types";
 import { MILLISECONDS_PER_SECOND } from "../shared/timeConstants";
 
@@ -23,28 +24,28 @@ export const SLEEP_PHASE_CONFIGS: Record<SleepPhaseKey, SleepPhaseConfig> = {
   awake: {
     key: "awake",
     label: "awake",
-    name: "Пробуждение",
+    name: t("Пробуждение"),
     level: 3,
     color: "#e07a5f",
   },
   rem: {
     key: "rem",
     label: "rem",
-    name: "Быстрый сон",
+    name: t("Быстрый сон"),
     level: 2,
     color: "#8f78b5",
   },
   light: {
     key: "light",
     label: "light",
-    name: "Лёгкий сон",
+    name: t("Лёгкий сон"),
     level: 1,
     color: "#5c95c4",
   },
   deep: {
     key: "deep",
     label: "deep",
-    name: "Глубокий сон",
+    name: t("Глубокий сон"),
     level: 0,
     color: "#2c467a",
   },

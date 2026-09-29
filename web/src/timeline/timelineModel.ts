@@ -1,3 +1,4 @@
+import { t, locale } from "../i18n";
 import { PRODUCTIVITY_LABELS as PRODUCTIVITY_NAMES } from "../dayDetail";
 import {
   FALLBACK_ACTIVITY_COLOR,
@@ -72,13 +73,13 @@ export function buildStepSeries(metrics: Metric[]) {
 
 function formatWorkoutDuration(seconds: number): string {
   if (seconds < SECONDS_PER_MINUTE)
-    return `${Math.max(1, Math.round(seconds))} сек`;
+    return t("{0} сек", Math.max(1, Math.round(seconds)));
   const totalMinutes = Math.round(seconds / SECONDS_PER_MINUTE);
   const hours = Math.floor(totalMinutes / MINUTES_PER_HOUR);
   const minutes = totalMinutes % MINUTES_PER_HOUR;
-  if (hours > 0 && minutes > 0) return `${hours} ч ${minutes} мин`;
-  if (hours > 0) return `${hours} ч`;
-  return `${minutes} мин`;
+  if (hours > 0 && minutes > 0) return t("{0} ч {1} мин", hours, minutes);
+  if (hours > 0) return t("{0} ч", hours);
+  return t("{0} мин", minutes);
 }
 
 export function buildWorkoutSegments(metrics: Metric[]): RecordItem[] {
@@ -93,7 +94,7 @@ export function buildWorkoutSegments(metrics: Metric[]): RecordItem[] {
       const seconds = Math.max(0, rawSeconds);
       const endMs = startMs + seconds * MILLISECONDS_PER_SECOND;
       const durationText = seconds > 0 ? formatWorkoutDuration(seconds) : "";
-      const title = point.valueText?.trim() || "Тренировка";
+      const title = point.valueText?.trim() || t("Тренировка");
       const detail = durationText ? `${title} · ${durationText}` : title;
       return {
         start: startMs,
@@ -134,8 +135,8 @@ export function buildSleepBoundaries(
     events.push({
       start: bedtime,
       end: 0,
-      label: "Сон",
-      detail: "Начало основной сессии сна",
+      label: t("Сон"),
+      detail: t("Начало основной сессии сна"),
       color: EVENT_COLORS.sleep,
       kind: "sleep",
     });
@@ -143,8 +144,8 @@ export function buildSleepBoundaries(
     events.push({
       start: wake,
       end: 0,
-      label: "Подъём",
-      detail: "Окончание основной сессии сна",
+      label: t("Подъём"),
+      detail: t("Окончание основной сессии сна"),
       color: EVENT_COLORS.sleep,
       kind: "sleep",
     });
@@ -186,14 +187,14 @@ export function buildActivitySegments(items: RescueItem[]): ActivitySegment[] {
     ) {
       previous.end = Math.max(previous.end, end);
       previous.seconds += item.seconds;
-      previous.detail = `${item.label} · ${level === null ? "категория недоступна" : PRODUCTIVITY_NAMES[level]} · ${formatWorkoutDuration(previous.seconds)}`;
+      previous.detail = `${item.label} · ${level === null ? t("категория недоступна") : PRODUCTIVITY_NAMES[level]} · ${formatWorkoutDuration(previous.seconds)}`;
       continue;
     }
     const segment: ActivitySegment = {
       start,
       end,
       label: item.label,
-      detail: `${item.label} · ${level === null ? "категория недоступна" : PRODUCTIVITY_NAMES[level]} · ${formatWorkoutDuration(item.seconds)}`,
+      detail: `${item.label} · ${level === null ? t("категория недоступна") : PRODUCTIVITY_NAMES[level]} · ${formatWorkoutDuration(item.seconds)}`,
       color: PRODUCTIVITY_COLORS[String(level)] ?? FALLBACK_ACTIVITY_COLOR,
       kind: "activity",
       level,
@@ -247,17 +248,17 @@ export function buildTodoistRecords(day: Day): RecordItem[] {
     {
       tasks: day.detail?.createdTasks ?? [],
       kind: "todo-created",
-      action: "создана",
+      action: t("создана"),
     },
     {
       tasks: day.detail?.completedTasks ?? [],
       kind: "todo-completed",
-      action: "закрыта",
+      action: t("закрыта"),
     },
     {
       tasks: day.detail?.deletedTasks ?? [],
       kind: "todo-deleted",
-      action: "удалена",
+      action: t("удалена"),
     },
   ] as const;
   for (const source of sources) {
@@ -266,7 +267,7 @@ export function buildTodoistRecords(day: Day): RecordItem[] {
         start: Date.parse(task.timestamp),
         end: 0,
         label: task.content,
-        detail: `Задача ${source.action} · ${task.content}`,
+        detail: t("Задача {0} · {1}", source.action, task.content),
         color: EVENT_COLORS[source.kind],
         kind: source.kind,
       });
@@ -284,19 +285,21 @@ export function buildEmaRecords(day: Day): EmaRecordItem[] {
       ];
       const metrics: string[] = [];
       if (event.mood != null)
-        metrics.push(`настроение: ${event.mood}/${EMA_MAX_RATING}`);
+        metrics.push(t("настроение: {0}/{1}", event.mood, EMA_MAX_RATING));
       if (event.energy != null)
-        metrics.push(`энергия: ${event.energy}/${EMA_MAX_RATING}`);
+        metrics.push(t("энергия: {0}/{1}", event.energy, EMA_MAX_RATING));
       if (event.focus != null)
-        metrics.push(`фокус: ${event.focus}/${EMA_MAX_RATING}`);
+        metrics.push(t("фокус: {0}/{1}", event.focus, EMA_MAX_RATING));
       if (event.stress != null)
-        metrics.push(`стресс: ${event.stress}/${EMA_MAX_RATING}`);
+        metrics.push(t("стресс: {0}/{1}", event.stress, EMA_MAX_RATING));
       if (metrics.length > 0) parts.push(metrics.join(", "));
       if (event.activity) {
         const activityInfo = getEmaActivity(event.activity);
-        parts.push(`занятие: ${event.activityLabel ?? activityInfo.label}`);
+        parts.push(
+          t("занятие: {0}", event.activityLabel ?? activityInfo.label),
+        );
       }
-      if (event.note) parts.push(`заметка: ${event.note}`);
+      if (event.note) parts.push(t("заметка: {0}", event.note));
       return {
         start: Date.parse(event.timestamp),
         end: 0,
@@ -433,7 +436,7 @@ export function zonedTimestamp(
 }
 
 export function localLabel(timestamp: number, timezone: string): string {
-  return new Intl.DateTimeFormat("ru-RU", {
+  return new Intl.DateTimeFormat(locale, {
     timeZone: timezone,
     hour: "2-digit",
     minute: "2-digit",

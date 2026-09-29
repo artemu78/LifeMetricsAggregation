@@ -1,3 +1,4 @@
+import { t, locale } from "./i18n";
 import { MINUTES_PER_HOUR, SECONDS_PER_MINUTE } from "./shared/timeConstants";
 import {
   PERCENT_MAX,
@@ -22,15 +23,15 @@ const PRODUCTIVITY_WEIGHTS: Record<string, number> = {
 };
 
 export const PRODUCTIVITY_LABELS: Record<string, string> = {
-  "-2": "Отвлекающее",
-  "-1": "Личное",
-  "0": "Нейтральное",
-  "1": "Другая работа",
-  "2": "Сосредоточенная работа",
+  "-2": t("Отвлекающее"),
+  "-1": t("Личное"),
+  "0": t("Нейтральное"),
+  "1": t("Другая работа"),
+  "2": t("Сосредоточенная работа"),
 };
 
 export function formatRecordTime(timestamp: string, timezone: string): string {
-  return new Date(timestamp).toLocaleTimeString("ru-RU", {
+  return new Date(timestamp).toLocaleTimeString(locale, {
     hour: "2-digit",
     minute: "2-digit",
     timeZone: timezone,

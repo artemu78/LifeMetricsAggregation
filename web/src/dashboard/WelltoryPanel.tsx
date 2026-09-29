@@ -1,3 +1,4 @@
+import { t } from "../i18n";
 import { RecordTime } from "../shared/RecordTime";
 import type { DashboardDay } from "../store";
 
@@ -27,7 +28,7 @@ export function WelltoryPanel({
           </div>
         ))}
         {!day.detail.welltoryMetrics.length && (
-          <p className="muted">Нет измерений</p>
+          <p className="muted">{t("Нет измерений")}</p>
         )}
       </div>
     </section>

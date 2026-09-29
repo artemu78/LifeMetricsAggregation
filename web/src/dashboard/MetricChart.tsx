@@ -1,3 +1,4 @@
+import { locale } from "../i18n";
 import {
   CartesianGrid,
   Line,
@@ -32,7 +33,7 @@ export function MetricChart({
   const data = day.detail.braceletMetrics
     .filter((point) => point.metric === metric && point.value != null)
     .map((point) => ({
-      time: new Date(point.timestamp).toLocaleTimeString("ru-RU", {
+      time: new Date(point.timestamp).toLocaleTimeString(locale, {
         hour: "2-digit",
         minute: "2-digit",
         timeZone: timezone,

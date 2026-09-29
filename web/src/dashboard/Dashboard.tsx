@@ -1,3 +1,5 @@
+import { LanguageSwitch } from "../i18n/LanguageSwitch";
+import { t } from "../i18n";
 import { RefreshCw } from "lucide-react";
 import { observer } from "mobx-react-lite";
 import { Suspense, useEffect } from "react";
@@ -24,10 +26,10 @@ export const Dashboard = observer(function Dashboard() {
     >
       <header className="topbar">
         <div>
-          <p className="eyebrow">Локальный обзор</p>
+          <p className="eyebrow">{t("Локальный обзор")}</p>
           <h1>Live Life</h1>
           <p className="subtitle">
-            Дней: {displayedDayCount} · {store.from} — {store.to}
+            {t("Дней:")} {displayedDayCount} · {store.from} — {store.to}
           </p>
         </div>
         <div className="actions">
@@ -40,9 +42,10 @@ export const Dashboard = observer(function Dashboard() {
               className={store.syncing ? "spinning" : undefined}
               aria-hidden="true"
             />
-            {store.syncing ? "Обновляем…" : "Обновить данные"}
+            {store.syncing ? t("Обновляем…") : t("Обновить данные")}
           </button>
           <DashboardLegend />
+          <LanguageSwitch disabled={store.syncing} />
         </div>
       </header>
 
@@ -51,7 +54,7 @@ export const Dashboard = observer(function Dashboard() {
         <div className="message success">{store.syncMessage}</div>
       )}
       {store.loading && !store.dashboard && (
-        <div className="loading">Загружаем календарь…</div>
+        <div className="loading">{t("Загружаем календарь…")}</div>
       )}
 
       <DashboardCalendar days={store.dashboard?.days ?? []} />
@@ -60,7 +63,7 @@ export const Dashboard = observer(function Dashboard() {
         fallback={
           <div className="modal-backdrop">
             <output className="loading">
-              Загружаем подробности дня…
+              {t("Загружаем подробности дня…")}
             </output>
           </div>
         }
