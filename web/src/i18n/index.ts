@@ -1,5 +1,8 @@
-import { serverEnglish } from "./serverMessages";
+import serverTranslations from "./serverMessages.json";
 import { english } from "./messages";
+
+// Server diagnostics are translation data, separate from the lookup logic.
+const serverEnglish: Readonly<Record<string, string>> = serverTranslations;
 
 export type Language = "ru" | "en";
 export const LANGUAGE_COOKIE = "live_life_language";
