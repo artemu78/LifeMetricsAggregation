@@ -29,7 +29,7 @@ export function DriveSetupInstructions({ disabled, upload }: Readonly<Props>) {
           >
             {t("включите Google Drive API")}
           </a>
-          .
+          {"."}
         </li>
         <li>
           {t("В Google Auth Platform заполните Branding и настройте")}{" "}
