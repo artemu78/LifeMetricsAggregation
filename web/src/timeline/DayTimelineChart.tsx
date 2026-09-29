@@ -1,3 +1,4 @@
+import { t } from "../i18n";
 import { useMemo } from "react";
 import { TimelineAxis } from "./TimelineAxis";
 import { TimelineTracks } from "./TimelineTracks";
@@ -67,11 +68,14 @@ export function DayTimelineChart({
   return (
     <section
       className="day-chart-card"
-      aria-label="Общий график событий и показателей дня"
+      aria-label={t("Общий график событий и показателей дня")}
     >
       <div className="day-chart-heading">
         <div>
-          <p>Общая шкала времени · {timezone} · логический день 05:00–05:00</p>
+          <p>
+            {t("Общая шкала времени ·")} {timezone}{" "}
+            {t("· логический день 05:00–05:00")}
+          </p>
         </div>
       </div>
       <div
@@ -97,7 +101,9 @@ export function DayTimelineChart({
           className="day-chart"
           viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
           role="img"
-          aria-label="Пульс, продуктивность и события на общей временной шкале"
+          aria-label={t(
+            "Пульс, продуктивность и события на общей временной шкале",
+          )}
         >
           <TimelineTracks
             model={model}
@@ -147,7 +153,9 @@ export function DayTimelineChart({
           {selected.detail}
         </div>
       )}
-      {empty && <p className="muted">Для этой даты нет точек графика.</p>}
+      {empty && (
+        <p className="muted">{t("Для этой даты нет точек графика.")}</p>
+      )}
     </section>
   );
 }

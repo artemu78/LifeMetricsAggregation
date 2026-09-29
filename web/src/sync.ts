@@ -1,3 +1,4 @@
+import { t, serverMessage } from "./i18n";
 import { errorMessage } from "./shared/responseError";
 import { JSON_HEADERS, SYNC_STATUS_LABELS } from "./shared/sourceConfig";
 import type { components } from "./generated/api-types";
@@ -81,7 +82,11 @@ export async function syncDashboardDataStream(
         sources: parsed.sources,
       };
     } else if (parsed.type === "error") {
-      throw new Error(parsed.message || "Ошибка синхронизации");
+      throw new Error(
+        parsed.message
+          ? serverMessage(parsed.message)
+          : t("Ошибка синхронизации"),
+      );
     }
   };
 
@@ -101,7 +106,7 @@ export async function syncDashboardDataStream(
   }
 
   if (!finalResponse) {
-    throw new Error("Синхронизация не завершилась корректно");
+    throw new Error(t("Синхронизация не завершилась корректно"));
   }
 
   return finalResponse;

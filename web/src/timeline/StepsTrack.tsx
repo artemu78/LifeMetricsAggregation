@@ -1,3 +1,4 @@
+import { t, locale } from "../i18n";
 import type { MouseEvent } from "react";
 import {
   STEP_BAR,
@@ -43,12 +44,12 @@ export function StepsTrack({
             STEP_BAR.minWidth,
             x(to) - barX - STEP_BAR.gap,
           );
-          const stepCount = Math.round(item.value).toLocaleString("ru-RU");
+          const stepCount = Math.round(item.value).toLocaleString(locale);
           const stepItem: RecordItem = {
             start: item.time,
             end: item.time + STEP_BUCKET_DURATION,
-            label: "Шаги",
-            detail: `${stepCount} шагов`,
+            label: t("Шаги"),
+            detail: t("{0} шагов", stepCount),
             color: STEP_BAR.color,
             kind: "steps",
           };

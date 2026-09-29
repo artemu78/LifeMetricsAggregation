@@ -7,6 +7,7 @@ The domain terminology and data boundaries are defined in [VOCABULARY.md](../doc
 - `src/timeline/` prepares the shared timeline and renders its individual tracks. Viewport, cursor, and selection hooks own their respective browser interactions.
 - `src/sleep/` separates interval normalization, curve geometry, axes, and hover rendering.
 - `src/synchronization/` contains synchronization feedback and Google Drive recovery UI.
+- `src/i18n/` holds Russian/English UI translations and language selection. The top-right switch saves `live_life_language` in a one-year, site-wide cookie and reloads the current URL. A saved choice takes precedence over the first supported browser language; unsupported preferences fall back to English. Dates and numbers follow the interface language while the dashboard timezone stays unchanged. Personal task text, notes, and source records retain their original language. Add application messages to the typed catalog, and keep server diagnostic translations aligned with the server.
 - `src/shared/` holds shared presentation constants, duration formatting, source labels, and modal behavior.
 - `src/store.ts` coordinates dashboard loading and synchronization; `src/sync.ts` handles the response stream.
 

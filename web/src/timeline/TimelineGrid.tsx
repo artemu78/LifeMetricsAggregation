@@ -1,3 +1,4 @@
+import { t } from "../i18n";
 import {
   ACTIVITY_LABEL_BASELINE,
   ACTIVITY_LANE_HEIGHT,
@@ -59,7 +60,7 @@ export function TimelineGrid({ ticks, x }: Readonly<Props>) {
         y={WELLTORY_SUBLABEL_Y}
         className="chart-welltory-sub-label"
       >
-        ↑ энергия · ↓ стресс
+        {t("↑ энергия · ↓ стресс")}
       </text>
 
       {ticks.map((tick) => (

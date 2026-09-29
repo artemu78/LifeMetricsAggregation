@@ -2,6 +2,9 @@ import '@testing-library/jest-dom/vitest'
 import React from 'react'
 import { vi } from 'vitest'
 
+// Existing UI fixtures exercise the Russian interface. English has dedicated tests.
+Object.defineProperty(navigator, "languages", { configurable: true, value: ["ru-RU"] });
+
 // Polyfill ResizeObserver for JSDOM
 globalThis.ResizeObserver = class ResizeObserver {
   observe() {

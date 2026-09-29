@@ -1,3 +1,4 @@
+import { t } from "../i18n";
 import { useId, useMemo, useState, type MouseEvent } from "react";
 import {
   HEART_BOTTOM,
@@ -111,7 +112,9 @@ export function HeartTrack({ heart, x, timezone }: Readonly<Props>) {
             className="heart-rate-hit-area"
             onMouseMove={hoverHeartAt}
             onMouseLeave={() => setHoveredHeart(null)}
-            aria-label="Наведение на дорожку показывает ближайшее время и пульс"
+            aria-label={t(
+              "Наведение на дорожку показывает ближайшее время и пульс",
+            )}
           />
         )}
         {hoveredHeart && (
@@ -138,7 +141,7 @@ export function HeartTrack({ heart, x, timezone }: Readonly<Props>) {
               textAnchor="middle"
               className="heart-hover-value"
             >
-              {Math.round(hoveredHeart.value)} уд/мин
+              {Math.round(hoveredHeart.value)} {t("уд/мин")}
             </text>
           </g>
         )}

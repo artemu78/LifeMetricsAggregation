@@ -74,6 +74,23 @@ h1 {
   display: flex;
   gap: 10px;
 }
+.language-switch {
+  padding: 10px 12px;
+  border: 1px solid #c9d9d2;
+  border-radius: 12px;
+  background: #fff;
+  color: #245c4b;
+  font: inherit;
+  cursor: pointer;
+}
+.language-switch:focus-visible {
+  outline: 2px solid #245c4b;
+  outline-offset: 3px;
+}
+.language-switch:disabled {
+  cursor: wait;
+  opacity: .6;
+}
 .help-container {
   position: relative;
 }
@@ -961,6 +978,12 @@ h1 {
   }
   .topbar {
     flex-direction: column;
+    padding-top: 56px;
+  }
+  .language-switch {
+    position: absolute;
+    top: 0;
+    right: 0;
   }
   .detail-grid,
   .charts,

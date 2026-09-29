@@ -1,3 +1,4 @@
+import { t } from "../i18n";
 export const ACTIVITY_COLORS = [
   "#68a9c9",
   "#4c7f6d",
@@ -32,7 +33,7 @@ export const METRIC_GRID = { color: "#dce6e1", dash: "3 3" };
 export const OXYGEN_CHART = {
   metric: "fitness_drive.oxygen_saturation",
   color: "#3388a4",
-  title: "Кислород",
+  title: t("Кислород"),
 };
 export const PRODUCTIVITY_MARKER_GRADIENT = {
   centerPercent: 20,

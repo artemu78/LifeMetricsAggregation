@@ -1,3 +1,4 @@
+import { t } from "../i18n";
 import {
   MILLISECONDS_PER_HOUR,
   MILLISECONDS_PER_MINUTE,
@@ -23,11 +24,11 @@ export const EMA_TOP = 588;
 export const EMA_CENTER_Y = 626;
 export const AXIS_Y = 640;
 export const PRODUCTIVITY_LANES = [
-  { level: 2, label: "Фокус" },
-  { level: 1, label: "Работа" },
-  { level: 0, label: "Нейтр." },
-  { level: -1, label: "Личное" },
-  { level: -2, label: "Отвлеч." },
+  { level: 2, label: t("Фокус") },
+  { level: 1, label: t("Работа") },
+  { level: 0, label: t("Нейтр.") },
+  { level: -1, label: t("Личное") },
+  { level: -2, label: t("Отвлеч.") },
 ];
 export const EVENT_COLORS: Record<string, string> = {
   "todo-created": "#29915d",
@@ -146,10 +147,10 @@ export const EMA_GAUGE_TRACKS = [
 ] as const;
 export const EMA_MAX_RATING = 5;
 export const EMA_STATUS_LABELS: Record<string, string> = {
-  pending: "ожидание ответа",
-  answered: "ответ отправлен",
-  dismissed: "отклонено",
-  expired: "время ответа истекло",
+  pending: t("ожидание ответа"),
+  answered: t("ответ отправлен"),
+  dismissed: t("отклонено"),
+  expired: t("время ответа истекло"),
 };
 export const WELLTORY_GLYPH = {
   maxHeight: 42,
@@ -175,12 +176,12 @@ export const HEART_GRID_ROWS = [
   HEART_BOTTOM,
 ];
 export const LANE_LABELS = [
-  { label: "ПУЛЬС", y: (HEART_TOP + HEART_BOTTOM) / 2 },
-  { label: "ШАГИ", y: STEPS_TOP + 19 },
-  { label: "ТРЕНИРОВКИ", y: WORKOUTS_TOP + 16 },
-  { label: "АКТИВНОСТЬ", y: ACTIVITY_TOP + 8 },
+  { label: t("ПУЛЬС"), y: (HEART_TOP + HEART_BOTTOM) / 2 },
+  { label: t("ШАГИ"), y: STEPS_TOP + 19 },
+  { label: t("ТРЕНИРОВКИ"), y: WORKOUTS_TOP + 16 },
+  { label: t("АКТИВНОСТЬ"), y: ACTIVITY_TOP + 8 },
   { label: "WELLTORY", y: WELLTORY_TOP + 13 },
-  { label: "СОБЫТИЯ", y: EVENT_TOP + 17 },
+  { label: t("СОБЫТИЯ"), y: EVENT_TOP + 17 },
   { label: "TODOIST", y: TODOIST_TOP + 17 },
   { label: "EMA", y: EMA_TOP + 17 },
 ];

@@ -1,3 +1,4 @@
+import { t } from "../i18n";
 import type { MouseEvent } from "react";
 import { AXIS_Y, EVENT_COLORS, HEART_TOP } from "./timelineConfig";
 import { localLabel } from "./timelineModel";
@@ -21,15 +22,15 @@ export function SleepBoundaryMarkers({
   const boundaries = [
     {
       time: bedtime,
-      label: "Сон",
-      caption: "СОН",
-      detail: "Начало основной сессии сна",
+      label: t("Сон"),
+      caption: t("СОН"),
+      detail: t("Начало основной сессии сна"),
     },
     {
       time: wake,
-      label: "Подъём",
-      caption: "ПОДЪЁМ",
-      detail: "Окончание основной сессии сна",
+      label: t("Подъём"),
+      caption: t("ПОДЪЁМ"),
+      detail: t("Окончание основной сессии сна"),
     },
   ];
   return (

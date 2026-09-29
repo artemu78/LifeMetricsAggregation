@@ -1,3 +1,4 @@
+import { t, locale } from "../i18n";
 import { formatSleepDuration } from "../dayDetail";
 import { SleepStagesChart } from "../sleep/SleepStagesChart";
 import type { DashboardDay } from "../store";
@@ -14,15 +15,15 @@ export function BraceletPanel({
   );
   return (
     <section className="panel bracelet-panel">
-      <h3>Браслет</h3>
+      <h3>{t("Браслет")}</h3>
       <div className="metric-list">
         <p>
-          <span>Сон</span>
+          <span>{t("Сон")}</span>
           <b>{formatSleepDuration(day.bracelet.sleepSeconds)}</b>
         </p>
         <p>
-          <span>Шаги</span>
-          <b>{day.bracelet.steps?.toLocaleString("ru-RU") ?? "—"}</b>
+          <span>{t("Шаги")}</span>
+          <b>{day.bracelet.steps?.toLocaleString(locale) ?? "—"}</b>
         </p>
       </div>
       <SleepStagesChart sleepMetrics={sleep} timezone={timezone} />

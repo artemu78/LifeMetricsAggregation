@@ -1,3 +1,4 @@
+import { t } from "../i18n";
 import { RecordTime } from "../shared/RecordTime";
 import type { DashboardDay } from "../store";
 
@@ -12,17 +13,17 @@ export function TodoistPanel({
     <section className="panel">
       <h3>Todoist</h3>
       <TaskRecords
-        title="Созданные"
+        title={t("Созданные")}
         tasks={day.detail.createdTasks}
         timezone={timezone}
       />
       <TaskRecords
-        title="Завершённые"
+        title={t("Завершённые")}
         tasks={day.detail.completedTasks}
         timezone={timezone}
       />
       {!day.detail.createdTasks.length && !day.detail.completedTasks.length && (
-        <p className="muted">Нет задач</p>
+        <p className="muted">{t("Нет задач")}</p>
       )}
     </section>
   );

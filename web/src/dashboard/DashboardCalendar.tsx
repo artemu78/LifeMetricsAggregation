@@ -1,3 +1,4 @@
+import { t } from "../i18n";
 import type { DashboardDay } from "../store";
 import { CalendarCell } from "./CalendarCell";
 import { MONTH_FORMAT, WEEKDAYS } from "./dashboardConfig";
@@ -11,7 +12,9 @@ function monthLabel(date: string) {
   return label.charAt(0).toUpperCase() + label.slice(1);
 }
 
-export function DashboardCalendar({ days }: Readonly<{ days: DashboardDay[] }>) {
+export function DashboardCalendar({
+  days,
+}: Readonly<{ days: DashboardDay[] }>) {
   const monthGroups = days.reduce<
     Array<{
       key: string;
@@ -25,7 +28,7 @@ export function DashboardCalendar({ days }: Readonly<{ days: DashboardDay[] }>) 
     return groups;
   }, []);
   return (
-    <div className="calendar-months" aria-label="Календарь данных">
+    <div className="calendar-months" aria-label={t("Календарь данных")}>
       {monthGroups.map((month) => (
         <section
           className="month-section"

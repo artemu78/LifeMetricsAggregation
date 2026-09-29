@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import { errorMessage } from "./shared/responseError";
 import { SYNC_SOURCES, SOURCE_LABELS } from "./shared/sourceConfig";
 import { makeAutoObservable, runInAction } from "mobx";
@@ -56,7 +57,7 @@ export class DashboardStore {
         this.error =
           error instanceof Error
             ? error.message
-            : "Не удалось загрузить данные";
+            : t("Не удалось загрузить данные");
       });
     } finally {
       if (sequence === this.#loadSequence) {
@@ -131,11 +132,11 @@ export class DashboardStore {
       this.error =
         error instanceof Error
           ? error.message
-          : "Обновление данных не выполнено";
+          : t("Обновление данных не выполнено");
       for (const progress of Object.values(this.syncProgress)) {
         if (progress.status === "pending") {
           progress.status = "not_run";
-          progress.display = "обновление прервано";
+          progress.display = t("обновление прервано");
         }
       }
     });
@@ -191,12 +192,12 @@ function formatSyncSummary(
   return sources
     .map(({ source, status, records }) => {
       if (status === "success")
-        return `${SOURCE_LABELS[source]}: новых записей ${records}`;
+        return t("{0}: новых записей {1}", SOURCE_LABELS[source], records);
       if (status === "not_run")
-        return `${SOURCE_LABELS[source]}: источник недоступен`;
+        return t("{0}: источник недоступен", SOURCE_LABELS[source]);
       if (status === "partial")
-        return `${SOURCE_LABELS[source]}: обновлено частично`;
-      return `${SOURCE_LABELS[source]}: ошибка`;
+        return t("{0}: обновлено частично", SOURCE_LABELS[source]);
+      return t("{0}: ошибка", SOURCE_LABELS[source]);
     })
     .join(" · ");
 }

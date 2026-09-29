@@ -1,3 +1,4 @@
+import { locale } from "../i18n";
 import {
   MILLISECONDS_PER_HOUR,
   MILLISECONDS_PER_MINUTE,
@@ -41,7 +42,7 @@ export function buildSleepGeometry(
   for (let i = 0; i < numTicks; i++) {
     const t = minTime + (i / (numTicks - 1)) * totalDuration;
     const date = new Date(t);
-    const label = date.toLocaleTimeString("ru-RU", {
+    const label = date.toLocaleTimeString(locale, {
       hour: "2-digit",
       minute: "2-digit",
       timeZone: timezone,

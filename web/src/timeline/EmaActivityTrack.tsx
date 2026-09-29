@@ -1,3 +1,4 @@
+import { t } from "../i18n";
 import type { MouseEvent } from "react";
 import { getEmaActivity } from "./emaActivities";
 import { EMA_ACTIVITY_MARKER, EVENT_TOP } from "./timelineConfig";
@@ -23,7 +24,7 @@ export function EmaActivityTrack({
           const ActivityIcon = activityInfo.icon;
           const activityLabel = item.activityLabel ?? activityInfo.label;
           const detailParts = [`EMA · ${activityLabel}`];
-          if (item.note) detailParts.push(`заметка: ${item.note}`);
+          if (item.note) detailParts.push(t("заметка: {0}", item.note));
           const activityRecord: RecordItem = {
             start: item.start,
             end: 0,

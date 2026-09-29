@@ -1,3 +1,4 @@
+import { t, serverMessage } from "../i18n";
 import type { components } from "../generated/api-types";
 import { useDriveConnection } from "./useDriveConnection";
 import { DriveSetupInstructions } from "./DriveSetupInstructions";
@@ -17,23 +18,28 @@ export function DriveRecovery({ issue, syncing, retry }: DriveRecoveryProps) {
   const disabled = busy || pending || syncing;
   return (
     <section className="drive-recovery" aria-labelledby="drive-recovery-title">
-      <h3 id="drive-recovery-title">Подключение Google Drive</h3>
+      <h3 id="drive-recovery-title">{t("Подключение Google Drive")}</h3>
       <div aria-live="polite">
         {connection.status === "success" ? (
           <p>
-            Google Drive подключён. Нажмите «Повторить обновление», чтобы
-            загрузить данные браслета.
+            {t(
+              "Google Drive подключён. Нажмите «Повторить обновление», чтобы загрузить данные браслета.",
+            )}
           </p>
         ) : (
           <p>
-            {problem?.message ??
-              "Не удалось обновить браслет. Подключите Google Drive или проверьте настройки."}
+            {problem?.message
+              ? serverMessage(problem.message)
+              : t(
+                  "Не удалось обновить браслет. Подключите Google Drive или проверьте настройки.",
+                )}
           </p>
         )}
         {pending && (
           <p>
-            Нажмите «Продолжить вход в Google», завершите вход в отдельной
-            вкладке и вернитесь сюда. Сеанс действует 3 минуты.
+            {t(
+              "Нажмите «Продолжить вход в Google», завершите вход в отдельной вкладке и вернитесь сюда. Сеанс действует 3 минуты.",
+            )}
           </p>
         )}
         {message && <output>{message}</output>}
@@ -44,7 +50,7 @@ export function DriveRecovery({ issue, syncing, retry }: DriveRecoveryProps) {
           disabled={disabled}
           onClick={() => void connect()}
         >
-          {busy ? "Подождите…" : "Подключить Google Drive"}
+          {busy ? t("Подождите…") : t("Подключить Google Drive")}
         </button>
         {pending && connection.authorizationUrl && (
           <a
@@ -53,23 +59,24 @@ export function DriveRecovery({ issue, syncing, retry }: DriveRecoveryProps) {
             target="_blank"
             rel="noreferrer"
           >
-            Продолжить вход в Google
+            {t("Продолжить вход в Google")}
           </a>
         )}
         <button className="button" disabled={disabled} onClick={retry}>
-          Повторить обновление
+          {t("Повторить обновление")}
         </button>
       </div>
       <p className="drive-recovery-note">
-        Ранее загруженные данные остаются доступны. Пароль вводится только на
-        странице Google.
+        {t(
+          "Ранее загруженные данные остаются доступны. Пароль вводится только на странице Google.",
+        )}
       </p>
       {connection.status !== "success" && problem?.steps.length ? (
         <details>
-          <summary>Как восстановить доступ</summary>
+          <summary>{t("Как восстановить доступ")}</summary>
           <ol>
             {problem.steps.map((step) => (
-              <li key={step}>{step}</li>
+              <li key={step}>{serverMessage(step)}</li>
             ))}
           </ol>
         </details>
@@ -77,7 +84,8 @@ export function DriveRecovery({ issue, syncing, retry }: DriveRecoveryProps) {
       <DriveSetupInstructions disabled={disabled} upload={upload} />
       {problem?.diagnosticId && (
         <small>
-          Код: {problem.code} · Диагностика: {problem.diagnosticId}
+          {t("Код:")} {problem.code} {t("· Диагностика:")}{" "}
+          {problem.diagnosticId}
         </small>
       )}
     </section>

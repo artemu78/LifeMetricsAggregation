@@ -1,3 +1,4 @@
+import { t, locale } from "../i18n";
 import { useId, useMemo, useState } from "react";
 import { formatDuration } from "../shared/formatDuration";
 import {
@@ -34,7 +35,7 @@ export function SleepStagesChart({
     [intervals, timezone],
   );
   if (!geometry)
-    return <p className="muted sleep-empty">Нет данных о фазах сна</p>;
+    return <p className="muted sleep-empty">{t("Нет данных о фазах сна")}</p>;
   return (
     <SleepChart intervals={intervals} geometry={geometry} timezone={timezone} />
   );
@@ -45,7 +46,11 @@ type SleepChartProps = {
   geometry: SleepGeometry;
   timezone: string;
 };
-function SleepChart({ intervals, geometry, timezone }: Readonly<SleepChartProps>) {
+function SleepChart({
+  intervals,
+  geometry,
+  timezone,
+}: Readonly<SleepChartProps>) {
   const idPrefix = useId().replaceAll(":", "");
   const lineGradientId = `sleep-line-gradient-${idPrefix}`;
   const areaGradientId = `sleep-area-gradient-${idPrefix}`;
@@ -69,7 +74,7 @@ function SleepChart({ intervals, geometry, timezone }: Readonly<SleepChartProps>
 
     const config = SLEEP_PHASE_CONFIGS[match.phase];
     const date = new Date(hoverTime);
-    const timeStr = date.toLocaleTimeString("ru-RU", {
+    const timeStr = date.toLocaleTimeString(locale, {
       hour: "2-digit",
       minute: "2-digit",
       timeZone: timezone,
@@ -90,7 +95,7 @@ function SleepChart({ intervals, geometry, timezone }: Readonly<SleepChartProps>
         className="sleep-chart-svg"
         viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
         role="img"
-        aria-label="График фаз сна на временной шкале"
+        aria-label={t("График фаз сна на временной шкале")}
         onPointerMove={handlePointerMove}
         onPointerLeave={() => setHoverInfo(null)}
       >
