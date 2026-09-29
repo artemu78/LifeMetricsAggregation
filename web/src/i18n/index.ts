@@ -26,15 +26,20 @@ export function resolveLanguage(
   return "en";
 }
 
+let browserLanguages: readonly string[] = [];
+if (typeof navigator !== "undefined") {
+  if (navigator.languages?.length) {
+    browserLanguages = navigator.languages;
+  } else {
+    browserLanguages = [navigator.language];
+  }
+}
+
 // Initialize before configuration modules create labels and formatters. A language
 // change reloads the current URL, keeping every module on the same locale.
 export const language = resolveLanguage(
   typeof document === "undefined" ? "" : document.cookie,
-  typeof navigator === "undefined"
-    ? []
-    : navigator.languages?.length
-      ? navigator.languages
-      : [navigator.language],
+  browserLanguages,
 );
 export const locale = language === "ru" ? "ru-RU" : "en-GB";
 
