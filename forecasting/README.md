@@ -91,3 +91,11 @@ Tomorrow is calculated from the current Moscow date. This is a forecast made **n
 The command reads the existing local database without synchronizing sources. Refresh sources through the normal application workflow first when needed. On macOS the script enforces network denial with `sandbox-exec`; elsewhere the runtime's documented Python-level guard applies.
 
 For a fresh installation only, run `./forecasting/scripts/setup.sh` once to create the isolated environment, install locked dependencies, and download the pinned checkpoint. The installed environment and checkpoint in this workspace are already ready.
+
+Choose the assessment date with `--date` (tomorrow remains the default):
+
+```sh
+./forecasting/scripts/predict-tomorrow.sh --date 2026-10-23
+```
+
+All assessments are at 10:00 Moscow. Future dates use inputs available now; a past date reconstructs its 09:00 cutoff and is marked reconstructed. Longer horizons have not been validated. Invalid dates fail before loading data or the model.

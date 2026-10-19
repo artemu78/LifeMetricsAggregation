@@ -16,11 +16,24 @@ def save(path, value):
     path.write_text(json.dumps(value, indent=2, allow_nan=False) + '\n')
 
 
+def prediction_schedule(requested_date, now):
+    """Future assessment uses now; past mornings reconstruct their 09:00 cutoff."""
+    from datetime import date, datetime, time, timedelta
+    from zoneinfo import ZoneInfo
+    now = now.astimezone(ZoneInfo('Europe/Moscow'))
+    day = date.fromisoformat(requested_date) if requested_date else now.date() + timedelta(days=1)
+    if requested_date and day.isoformat() != requested_date:
+        raise ValueError('Use YYYY-MM-DD for --date')
+    morning = datetime.combine(day, time(9), now.tzinfo)
+    assessment = datetime.combine(day, time(10), now.tzinfo)
+    return day.isoformat(), min(now, morning).isoformat(), now >= assessment
+
+
 def main():
     config = json.loads((ROOT / 'config.json').read_text())
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('command', choices=['download', 'smoke', 'inventory', 'evaluate', 'predict', 'tomorrow'])
-    parser.add_argument('--date', help='Forecast date YYYY-MM-DD; required for predict')
+    parser.add_argument('--date', help='Assessment date YYYY-MM-DD; defaults to tomorrow for the tomorrow command')
     parser.add_argument('--database', type=Path, default=ROOT.parent / 'data/life.db')
     parser.add_argument('--model-dir', type=Path, default=ROOT / 'models/Timestral-209M')
     parser.add_argument('--output', type=Path, default=ROOT / 'outputs')
@@ -33,12 +46,15 @@ def main():
     parser.add_argument('--baselines-only', action='store_true')
     args = parser.parse_args()
     as_of = None
+    reconstructed = None
     if args.command == 'tomorrow':
         from datetime import datetime, timedelta
         from zoneinfo import ZoneInfo
         now = datetime.now(ZoneInfo('Europe/Moscow'))
-        as_of = now.isoformat()
-        args.date = (now.date() + timedelta(days=1)).isoformat()
+        try:
+            args.date, as_of, reconstructed = prediction_schedule(args.date, now)
+        except ValueError as error:
+            parser.error(str(error))
         args.availability = 'strict'
     if args.command == 'predict' and not args.date:
         parser.error('--date is required for predict')
@@ -73,6 +89,8 @@ def main():
         with deny_network():
             model = LocalTimestral(args.model_dir, threads=args.threads)
             result = predict_morning(dataset, args.date, model, config['model']['revision'], args.min_train_labels, as_of=as_of)
+        if reconstructed is not None:
+            result['reconstructed'] = reconstructed
         save(args.output / ('prediction-' + args.date + '.json'), result)
         print(f"Assessment: {args.date} 10:00 Europe/Moscow")
         for item in result['results']:
