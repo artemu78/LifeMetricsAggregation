@@ -42,7 +42,7 @@ def _rows(conn, table, fields):
     return [dict(row) for row in conn.execute(f'SELECT {projection} FROM {table}')]
 
 
-def build_dataset(db_path: str | Path, *, window_minutes=30, availability='retrospective', through_date=None) -> dict:
+def build_dataset(db_path: str | Path, *, window_minutes=30, availability='retrospective', through_date=None, as_of=None) -> dict:
     """Build consecutive daily rows; targets remain missing without a nearby answer.
 
     Strict inputs require both event completion and recorded import time <=09:00.
@@ -52,6 +52,9 @@ def build_dataset(db_path: str | Path, *, window_minutes=30, availability='retro
         raise ValueError('availability must be retrospective or strict')
     if not isinstance(window_minutes, int) or not 0 <= window_minutes < 60:
         raise ValueError('window_minutes must be an integer in [0, 59] (after the 09:00 cutoff)')
+    as_of_time = _timestamp(as_of) if as_of is not None else None
+    if as_of is not None and as_of_time is None:
+        raise ValueError('as_of must be a timezone-aware ISO timestamp')
     uri = Path(db_path).expanduser().resolve().as_uri() + '?mode=ro'
     conn = sqlite3.connect(uri, uri=True)
     conn.row_factory = sqlite3.Row
@@ -167,7 +170,7 @@ def build_dataset(db_path: str | Path, *, window_minutes=30, availability='retro
     def available(record, cutoff):
         return record['end'] <= cutoff and record['time'] <= cutoff and (availability != 'strict' or (record['available'] is not None and record['available'] <= cutoff))
 
-    cutoffs = [datetime.combine(day, time(9), TZ) for day in days]
+    cutoffs = [min(datetime.combine(day, time(9), TZ), as_of_time) if as_of_time else datetime.combine(day, time(9), TZ) for day in days]
     for day in days:
         target_time = datetime.combine(day, time(10), TZ)
         for target, points in target_points.items():
@@ -248,6 +251,7 @@ def build_dataset(db_path: str | Path, *, window_minutes=30, availability='retro
         'metadata': {
             'timezone': 'Europe/Moscow', 'forecast_time': '09:00', 'target_time': '10:00',
             'window_minutes': window_minutes, 'availability': availability,
+            'as_of': as_of_time.isoformat() if as_of_time else None,
             'coverage': coverage, 'timestamp_offsets_minutes': offsets, 'target_available_at': target_available, 'units': units,
             'candidate_metrics': candidate_report,
             'suitability': {name: {'labels': coverage[name]['observed'], 'status': 'exploratory' if coverage[name]['observed'] >= 30 else 'insufficient_labels'} for name in TARGETS},

@@ -19,7 +19,7 @@ def save(path, value):
 def main():
     config = json.loads((ROOT / 'config.json').read_text())
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('command', choices=['download', 'smoke', 'inventory', 'evaluate', 'predict'])
+    parser.add_argument('command', choices=['download', 'smoke', 'inventory', 'evaluate', 'predict', 'tomorrow'])
     parser.add_argument('--date', help='Forecast date YYYY-MM-DD; required for predict')
     parser.add_argument('--database', type=Path, default=ROOT.parent / 'data/life.db')
     parser.add_argument('--model-dir', type=Path, default=ROOT / 'models/Timestral-209M')
@@ -32,6 +32,14 @@ def main():
     parser.add_argument('--threads', type=int, default=4)
     parser.add_argument('--baselines-only', action='store_true')
     args = parser.parse_args()
+    as_of = None
+    if args.command == 'tomorrow':
+        from datetime import datetime, timedelta
+        from zoneinfo import ZoneInfo
+        now = datetime.now(ZoneInfo('Europe/Moscow'))
+        as_of = now.isoformat()
+        args.date = (now.date() + timedelta(days=1)).isoformat()
+        args.availability = 'strict'
     if args.command == 'predict' and not args.date:
         parser.error('--date is required for predict')
     if args.command == 'download':
@@ -50,7 +58,7 @@ def main():
     before = hashlib.sha256(args.database.read_bytes()).hexdigest()
     started = time.monotonic()
     dataset = build_dataset(args.database, window_minutes=args.window_minutes, availability=args.availability,
-                            through_date=args.date if args.command == 'predict' else None)
+                            through_date=args.date if args.command in {'predict', 'tomorrow'} else None, as_of=as_of)
     after = hashlib.sha256(args.database.read_bytes()).hexdigest()
     if before != after:
         raise RuntimeError('Source database changed during read; rerun without concurrent synchronization.')
@@ -59,14 +67,22 @@ def main():
     if args.command == 'inventory':
         print('Local dataset and inventory saved; source database unchanged.')
         return
-    if args.command == 'predict':
+    if args.command in {'predict', 'tomorrow'}:
         from .predict import predict_morning
         from .model import LocalTimestral, deny_network
         with deny_network():
             model = LocalTimestral(args.model_dir, threads=args.threads)
-            result = predict_morning(dataset, args.date, model, config['model']['revision'], args.min_train_labels)
+            result = predict_morning(dataset, args.date, model, config['model']['revision'], args.min_train_labels, as_of=as_of)
         save(args.output / ('prediction-' + args.date + '.json'), result)
-        print('Morning prediction saved locally.')
+        print(f"Assessment: {args.date} 10:00 Europe/Moscow")
+        for item in result['results']:
+            label = {'welltory.energy': 'Welltory energy', 'ema.mood': 'EMA mood', 'ema.energy': 'EMA energy'}[item['target']]
+            if item['point'] is None:
+                print(f"{label}: insufficient history ({item['quality']['training_labels']} morning labels)")
+            else:
+                q = item['quantiles']
+                print(f"{label}: {item['point']:.1f} {item['unit'] or ''}; model 80% interval {q['0.1']:.1f}–{q['0.9']:.1f}")
+        print('Experimental, uncalibrated forecast. Results: ' + str(args.output / ('prediction-' + args.date + '.json')))
         return
     from .evaluation import evaluate
     from .model import LocalTimestral, deny_network

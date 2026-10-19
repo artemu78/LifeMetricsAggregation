@@ -34,6 +34,15 @@ class DatasetTest(unittest.TestCase):
                           (event, stamp, 'answered', mood, energy, None, None, origin, 'PRIVATE_SENTINEL'))
         self.conn.commit()
 
+    def test_future_grid_uses_actual_run_cutoff(self):
+        self.metric('welltory.Energy(HRV)', '2026-10-02T11:00:00+03:00', 40)
+        self.metric('welltory.Energy(HRV)', '2026-10-02T13:00:00+03:00', 999)
+        result = build_dataset(self.path, through_date='2026-10-03', availability='strict',
+                               as_of='2026-10-02T12:00:00+03:00')
+        self.assertEqual(result['dates'][-1], '2026-10-03')
+        self.assertEqual(result['features']['welltory.Energy(HRV).last'][-1], 40)
+        self.assertIsNone(result['targets']['welltory.energy'][-1])
+
     def test_target_tie_partial_answers_and_daily_gaps(self):
         self.ema('early', '2026-10-02T09:45:00+03:00', mood=2)
         self.ema('late', '2026-10-02T10:15:00+03:00', mood=4, energy=5)

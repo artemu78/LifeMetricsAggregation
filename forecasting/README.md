@@ -75,3 +75,19 @@ sandbox-exec -p '(version 1)(allow default)(deny network*)' forecasting/.venv/bi
 This uses the predeclared all-input variant, not a model selected from today's outcome. The requested date's labels never enter the context. The grid extends through the requested date so features reflect its 09:00 cutoff even when the latest imported measurement is older. `quality` includes training-label count, last target date, available feature count and historical availability limitations. Predictions generated after assessment time are explicitly marked reconstructed. Missing targets retain `insufficient_data`; no fallback numeric estimate is fabricated.
 
 The initial local run completed 102 real-model calls without model failures. It demonstrated that the pipeline runs, but the available morning labels are too sparse to justify deployment; adding all structured inputs did not establish an improvement over simple baselines. Detailed private measurements and model errors are only in ignored output reports. The offline smoke test used about 1.75 GB peak process RSS; downloaded checkpoint files total about 837 MB. Agent billing was not available, so no monetary cost estimate is claimed.
+
+## Predict tomorrow with one command
+
+From the repository root:
+
+```sh
+./forecasting/scripts/predict-tomorrow.sh
+```
+
+The script works from any working directory when invoked by its absolute path. It prints **Welltory energy, EMA mood, and EMA energy** for tomorrow at **10:00 Europe/Moscow**, with model intervals or an explicit insufficient-history result. It saves `forecasting/outputs/prediction-YYYY-MM-DD.json` locally. Optional CLI flags such as `--threads 2` and `--output forecasting/outputs/my-run` are forwarded.
+
+Tomorrow is calculated from the current Moscow date. This is a forecast made **now**, not a reconstruction of tomorrow's 09:00 forecast: no future sleep, measurements or not-yet-imported observations enter the inputs. Tomorrow's features are capped at the actual run time; unfinished intervals are excluded, and some current-day aggregates may be partial. This advance-forecast policy has not been separately backtested or calibrated. The existing morning-only label requirement remains; it does not invent EMA estimates when history is insufficient.
+
+The command reads the existing local database without synchronizing sources. Refresh sources through the normal application workflow first when needed. On macOS the script enforces network denial with `sandbox-exec`; elsewhere the runtime's documented Python-level guard applies.
+
+For a fresh installation only, run `./forecasting/scripts/setup.sh` once to create the isolated environment, install locked dependencies, and download the pinned checkpoint. The installed environment and checkpoint in this workspace are already ready.
